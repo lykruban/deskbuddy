@@ -1,0 +1,51 @@
+{
+  "name": "deskbuddy",
+  "version": "1.0.0",
+  "description": "3D desktop companion with marketplace",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox --ozone-platform=x11",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.deskbuddy.app",
+    "productName": "DeskBuddy",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icons/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icons/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icons/icon.png"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.4",
+    "cors": "^2.8.6",
+    "electron": "^42.4.0",
+    "express": "^5.2.1",
+    "multer": "^2.2.0",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.15.3"
+  }
+}

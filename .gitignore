@@ -1,0 +1,25 @@
+# Dependencies (reinstall with `npm install`)
+node_modules/
+
+# Build output
+dist/
+out/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local env / secrets (license keys, signing certs, etc. — NEVER commit)
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+csc-*.json

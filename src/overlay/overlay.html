@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DeskBuddy</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      background: transparent;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      user-select: none;
+    }
+    #canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    canvas#c {
+      display: block;
+      background: transparent;
+      cursor: pointer;
+      /* The character is a NO-drag surface so a click anywhere on it opens OUR
+         menu (left- or right-click). A drag region would instead hand right-click
+         / press-hold to the compositor, which on GNOME/Wayland pops its own window
+         menu. Moving is done via "Move mode": picking Move from the menu shows the
+         #move-layer below (a full-window drag region) so you can grab anywhere. */
+      -webkit-app-region: no-drag;
+    }
+
+    /* Move mode: a full-window drag region, shown only while repositioning. This
+       is the only thing the compositor can drag on Wayland; keeping it hidden the
+       rest of the time means normal clicks reach our menu instead of GNOME's. */
+    #move-layer {
+      position: fixed; inset: 0;
+      display: none;
+      cursor: grabbing;
+      z-index: 20000;
+      background: rgba(99,102,241,0.07);
+      -webkit-app-region: drag;
+    }
+    #move-layer.on { display: block; }
+    #move-banner {
+      position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+      display: none; align-items: center; gap: 12px;
+      padding: 7px 8px 7px 14px;
+      border-radius: 10px;
+      background: rgba(20,20,30,0.92);
+      backdrop-filter: blur(8px);
+      color: #dde; font-size: 12px; white-space: nowrap;
+      z-index: 20001;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-app-region: no-drag;
+    }
+    #move-banner.on { display: flex; }
+    #move-done {
+      -webkit-app-region: no-drag;
+      padding: 5px 14px; border: none; border-radius: 7px;
+      background: rgba(99,102,241,0.9); color: #fff; font-size: 12px; cursor: pointer;
+    }
+    #move-done:hover { background: rgba(99,102,241,1); }
+
+    /* Settings-menu button (no-drag). Fades in on hover — a visible affordance in
+       addition to clicking the character directly. */
+    #menu-btn {
+      position: fixed;
+      top: 5px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 3px;
+      padding: 5px 12px;
+      border-radius: 9px;
+      background: rgba(20,20,30,0.55);
+      backdrop-filter: blur(6px);
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.18s;
+      z-index: 10000;
+      -webkit-app-region: no-drag;
+    }
+    #canvas-wrap:hover #menu-btn { opacity: 1; }
+    #menu-btn:hover { background: rgba(40,40,55,0.72); }
+    #menu-btn span { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.7); }
+
+    /* Interactive UI must opt out of the drag region so clicks register. */
+    #ctx, .mi, #menu-btn, #empty, #empty button, #toast { -webkit-app-region: no-drag; }
+
+    /* Shadow Settings panel — compact live-tuning card. */
+    #shadow-panel {
+      position: fixed; top: 8px; left: 8px;
+      display: none; flex-direction: column; gap: 7px;
+      width: 210px; max-height: calc(100% - 16px); overflow-y: auto;
+      padding: 11px 12px 13px;
+      border-radius: 11px;
+      background: rgba(14,14,22,0.95);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      backdrop-filter: blur(12px);
+      color: #dde; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      z-index: 30000;
+      -webkit-app-region: no-drag;
+    }
+    #shadow-panel.on { display: flex; }
+    #shadow-panel .hd { display: flex; align-items: center; justify-content: space-between; }
+    #shadow-panel .hd b { font-size: 12.5px; }
+    #shadow-panel .hd button {
+      -webkit-app-region: no-drag; cursor: pointer;
+      background: none; border: none; color: #aab; font-size: 16px; line-height: 1; padding: 0 2px;
+    }
+    #shadow-panel label { font-size: 10.5px; color: #99a; display: flex; justify-content: space-between; }
+    #shadow-panel label span { color: #cce; }
+    #shadow-panel input[type=range] { -webkit-app-region: no-drag; width: 100%; margin: 1px 0 2px; accent-color: #6366f1; }
+    #shadow-panel .reset {
+      -webkit-app-region: no-drag; cursor: pointer; margin-top: 4px;
+      padding: 5px; border: 1px solid rgba(255,255,255,0.15); border-radius: 7px;
+      background: rgba(255,255,255,0.05); color: #cce; font-size: 11px;
+    }
+    #shadow-panel .reset:hover { background: rgba(255,255,255,0.1); }
+
+    /* Right-click menu */
+    #ctx {
+      display: none;
+      position: fixed;
+      background: rgba(14, 14, 22, 0.96);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 9px;
+      padding: 5px 0;
+      min-width: 170px;
+      z-index: 9999;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      backdrop-filter: blur(12px);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .mi {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 16px;
+      color: #dde;
+      font-size: 12.5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .mi:hover { background: rgba(255,255,255,0.09); }
+    .mic, .mk { width: 15px; flex-shrink: 0; text-align: center; font-size: 12px; }
+    .mk { color: #6ee7a8; }                 /* checkmark for toggles (filled when on) */
+    .mi.on .mk::before { content: '✓'; }
+    .mi.on { color: #fff; }
+    .ms { border-top: 1px solid rgba(255,255,255,0.08); margin: 3px 0; }
+    .ml { color: #888; font-size: 10px; padding: 6px 16px 2px; }
+
+    /* Empty state */
+    #empty {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.55);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      text-align: center;
+      gap: 8px;
+    }
+    #empty .icon { font-size: 44px; }
+    #empty p { font-size: 12px; line-height: 1.5; }
+    #empty button {
+      margin-top: 6px;
+      padding: 7px 16px;
+      background: rgba(99,102,241,0.75);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #empty button:hover { background: rgba(99,102,241,1); }
+
+    /* Toast status */
+    #toast {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      color: rgba(255,255,255,0.8);
+      font-size: 10px;
+      font-family: monospace;
+      padding: 3px 10px;
+      border-radius: 10px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+    <div id="menu-btn" title="Menu"><span></span><span></span><span></span></div>
+    <div id="move-layer"></div>
+    <div id="move-banner"><span>✥ Drag the character anywhere</span><button id="move-done">Done</button></div>
+
+    <div id="shadow-panel">
+      <div class="hd"><b>Shadow</b><button id="shadow-close" title="Close">×</button></div>
+      <label>Distance<span id="v-dist"></span></label>      <input type="range" id="s-dist"    min="0"   max="1.2" step="0.01">
+      <label>Angle<span id="v-angle"></span></label>        <input type="range" id="s-angle"   min="0"   max="360" step="1">
+      <label>Yaw<span id="v-yaw"></span></label>            <input type="range" id="s-yaw"     min="-60" max="60"  step="1">
+      <label>Lean<span id="v-lean"></span></label>          <input type="range" id="s-lean"    min="-1.5" max="1.5" step="0.01">
+      <label>Length<span id="v-squash"></span></label>      <input type="range" id="s-squash"  min="0.2" max="1.4" step="0.01">
+      <label>Size<span id="v-scale"></span></label>         <input type="range" id="s-scale"   min="0.3" max="1.6" step="0.01">
+      <label>Opacity<span id="v-opacity"></span></label>    <input type="range" id="s-opacity" min="0"   max="0.8" step="0.01">
+      <button class="reset" id="shadow-reset">Reset to default</button>
+    </div>
+    <div id="empty">
+      <div class="icon">🐾</div>
+      <p>No character loaded.<br>Click to open Studio.</p>
+      <button onclick="window.deskbuddy.openStudio()">Open Studio</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "../../node_modules/three/build/three.module.js",
+      "three/examples/jsm/loaders/GLTFLoader.js": "../../node_modules/three/examples/jsm/loaders/GLTFLoader.js",
+      "three/examples/jsm/utils/SkeletonUtils.js": "../../node_modules/three/examples/jsm/utils/SkeletonUtils.js",
+      "@pixiv/three-vrm": "../../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+    }
+  }
+  </script>
+  <script type="module" src="overlay.js"></script>
+</body>
+</html>
