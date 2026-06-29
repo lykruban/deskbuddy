@@ -74,7 +74,10 @@ function startServer(dataDir) {
     if (!name) return res.status(400).json({ error: 'Name required' });
     let tags = [];
     try { tags = JSON.parse(req.body.tags || '[]'); } catch { tags = String(req.body.tags || '').split(',').map(t => t.trim()).filter(Boolean); }
-    const entry = store.add({ type: 'character', name, author: req.user.username, ownerId: req.user.id, description: description || '', tags, price: parseFloat(price) || 0, filename: req.file.filename, size: req.file.size });
+    // A rendered model thumbnail arrives as a data-URL field. Save it as a PNG next to the
+    // uploads so the card can show the actual model instead of a generic emoji.
+    const thumbnail = saveThumbnail(uploadsDir, req.body.thumbnail);
+    const entry = store.add({ type: 'character', name, author: req.user.username, ownerId: req.user.id, description: description || '', tags, price: parseFloat(price) || 0, filename: req.file.filename, size: req.file.size, thumbnail });
     users.addOwned(req.user.id, { type: 'character', id: entry.id, name: entry.name });   // you own what you publish
     res.status(201).json({ id: entry.id, name: entry.name });
   });
@@ -140,6 +143,31 @@ function startServer(dataDir) {
 
   app.post('/api/animations/:id/like', (req, res) => { store.incrementLikes(req.params.id); res.json({ ok: true }); });
 
+  // Lightweight preview: returns the pack's clip data WITHOUT counting as a download or
+  // adding to a library. The marketplace card uses it to play a little skeleton animation
+  // on hover, so people see the motion before they get it.
+  app.get('/api/animations/:id/preview', (req, res) => {
+    const a = store.get(req.params.id);
+    if (!a || a.type !== 'animation') return res.status(404).json({ error: 'Not found' });
+    if (a.inlineData) return res.json(a.inlineData);
+    const fp = path.join(uploadsDir, a.filename);
+    if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File missing' });
+    try { res.json(JSON.parse(fs.readFileSync(fp, 'utf8'))); }
+    catch { res.status(500).json({ error: 'Unreadable pack' }); }
+  });
+
+  // ── Purchase (records the sale; the actual file still comes from /download) ────
+  // No real payments yet — this just marks ownership so paid items behave like owned
+  // ones (re-installable, shown in My Library). Swap in a payment provider here later.
+  const purchase = (type) => (req, res) => {
+    const it = store.get(req.params.id);
+    if (!it || it.type !== type) return res.status(404).json({ error: 'Not found' });
+    users.addOwned(req.user.id, { type, id: it.id, name: it.name, paid: it.price || 0 });
+    res.json({ ok: true, price: it.price || 0 });
+  };
+  app.post('/api/characters/:id/purchase', requireAuth, purchase('character'));
+  app.post('/api/animations/:id/purchase', requireAuth, purchase('animation'));
+
   // ── Combined search ─────────────────────────────────────────────────────────
   app.get('/api/search', (req, res) => {
     const chars = store.list({ ...req.query, type: 'character' });
@@ -156,6 +184,21 @@ function startServer(dataDir) {
     });
     serverInstance.on('error', reject);
   });
+}
+
+// Decode a `data:image/png;base64,…` thumbnail into a file in uploads; returns the
+// stored filename (served via /uploads) or '' if absent/invalid.
+let _thumbSeq = 0;
+function saveThumbnail(uploadsDir, dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') return '';
+  const m = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
+  if (!m) return '';
+  try {
+    const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+    const name = `thumb-${Date.now()}-${_thumbSeq++}.${ext}`;
+    fs.writeFileSync(path.join(uploadsDir, name), Buffer.from(m[2], 'base64'));
+    return name;
+  } catch { return ''; }
 }
 
 // ── Seed free animation packs ─────────────────────────────────────────────────
