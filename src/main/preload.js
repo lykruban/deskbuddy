@@ -5,6 +5,20 @@ contextBridge.exposeInMainWorld('deskbuddy', {
   getSettings:      ()  => ipcRenderer.invoke('get-settings'),
   saveSettings:     (s) => ipcRenderer.invoke('save-settings', s),
 
+  // Account / shared auth session (one login across Studio + Marketplace)
+  authState:      ()  => ipcRenderer.invoke('auth-state'),
+  authLogin:      (c) => ipcRenderer.invoke('auth-login', c),
+  authSignup:     (c) => ipcRenderer.invoke('auth-signup', c),
+  authLogout:     ()  => ipcRenderer.invoke('auth-logout'),
+  authServerBase: ()  => ipcRenderer.invoke('auth-server-base'),
+  authForgot:     (c) => ipcRenderer.invoke('auth-forgot', c),
+  authReset:      (c) => ipcRenderer.invoke('auth-reset', c),
+  authResetCode:  (c) => ipcRenderer.invoke('auth-reset-code', c),
+
+  // Whole-library export / import (portable folder, linked to your account)
+  exportLibrary:  ()  => ipcRenderer.invoke('export-library'),
+  importLibrary:  ()  => ipcRenderer.invoke('import-library'),
+
   // Characters
   listCharacters:    ()  => ipcRenderer.invoke('list-characters'),
   importCharacter:   ()  => ipcRenderer.invoke('import-character'),

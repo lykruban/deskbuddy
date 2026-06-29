@@ -544,6 +544,137 @@ ipcMain.handle('get-animations-dir', () => ANIMATIONS_DIR);
 ipcMain.handle('get-characters-dir', () => CHARACTERS_DIR);
 ipcMain.handle('get-scenes-dir',     () => SCENES_DIR);
 
+// ── IPC: account / shared auth session ──────────────────────────────────────────
+// One login for the whole app (Studio + Marketplace share it). The token is persisted
+// in settings so it survives restarts. All auth goes over HTTP to SERVER_BASE so it
+// behaves identically whether the backend is the in-app localhost server (now) or a
+// remote deployed server (later — just point `serverBase` at the domain).
+const SERVER_BASE = () => (loadSettings().serverBase || process.env.DESKBUDDY_SERVER || `http://127.0.0.1:${PORT}`);
+async function authFetch(p, opts = {}) {
+  const res  = await fetch(SERVER_BASE() + '/api' + p, opts);
+  let data = null; try { data = await res.json(); } catch {}
+  return { ok: res.ok, status: res.status, data };
+}
+function getAuthToken() { return loadSettings().authToken || null; }
+function setAuthToken(t) { const s = loadSettings(); if (t) s.authToken = t; else delete s.authToken; saveSettings(s); }
+async function currentAccount() {
+  const token = getAuthToken(); if (!token) return null;
+  try { const r = await authFetch('/auth/me', { headers: { Authorization: 'Bearer ' + token } }); return r.ok ? (r.data?.user || null) : null; }
+  catch { return null; }
+}
+
+ipcMain.handle('auth-server-base', () => SERVER_BASE());
+ipcMain.handle('auth-state', async () => {
+  const token = getAuthToken();
+  if (!token) return { token: null, user: null };
+  const user = await currentAccount();
+  if (!user) { setAuthToken(null); return { token: null, user: null }; }   // stale/invalid → clear
+  return { token, user };
+});
+ipcMain.handle('auth-login', async (_, { username, password } = {}) => {
+  try {
+    const r = await authFetch('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    if (r.ok && r.data?.token) { setAuthToken(r.data.token); return { ok: true, user: r.data.user }; }
+    return { ok: false, error: r.data?.error || 'Login failed' };
+  } catch { return { ok: false, error: 'Cannot reach the server' }; }
+});
+ipcMain.handle('auth-signup', async (_, { username, password, email } = {}) => {
+  try {
+    const r = await authFetch('/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, email }) });
+    if (r.ok && r.data?.token) { setAuthToken(r.data.token); return { ok: true, user: r.data.user, recoveryCode: r.data.recoveryCode }; }
+    return { ok: false, error: r.data?.error || 'Signup failed' };
+  } catch { return { ok: false, error: 'Cannot reach the server' }; }
+});
+ipcMain.handle('auth-logout', async () => {
+  const token = getAuthToken();
+  if (token) { try { await authFetch('/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }); } catch {} }
+  setAuthToken(null);
+  return { ok: true };
+});
+// Password recovery: email path (forgot → reset with token) and offline path (reset-code).
+ipcMain.handle('auth-forgot', async (_, { email } = {}) => {
+  try { const r = await authFetch('/auth/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) }); return r.data || { ok: true }; }
+  catch { return { ok: false, error: 'Cannot reach the server' }; }
+});
+ipcMain.handle('auth-reset', async (_, { token, password } = {}) => {
+  try { const r = await authFetch('/auth/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password }) }); return r.ok ? { ok: true } : { ok: false, error: r.data?.error || 'Reset failed' }; }
+  catch { return { ok: false, error: 'Cannot reach the server' }; }
+});
+ipcMain.handle('auth-reset-code', async (_, { username, code, password } = {}) => {
+  try { const r = await authFetch('/auth/reset-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, code, password }) }); return r.ok ? { ok: true, recoveryCode: r.data?.recoveryCode } : { ok: false, error: r.data?.error || 'Reset failed' }; }
+  catch { return { ok: false, error: 'Cannot reach the server' }; }
+});
+
+// ── IPC: whole-library export / import ──────────────────────────────────────────
+// Your "App Library" = the characters, animation packs, and scenes saved on this PC.
+// Export copies ALL of it (incl. scene background images) into a portable folder you
+// can move to another PC; import loads such a folder back in (merge or replace). The
+// export is stamped with your account so it's linked to your login.
+const LIB_DIRS = () => ({ characters: CHARACTERS_DIR, animations: ANIMATIONS_DIR, scenes: SCENES_DIR });
+function copyDirInto(src, dest, replace) {
+  if (!fs.existsSync(src)) return 0;
+  fs.mkdirSync(dest, { recursive: true });
+  let n = 0;
+  for (const name of fs.readdirSync(src)) {
+    const s = path.join(src, name), d = path.join(dest, name);
+    try {
+      const st = fs.statSync(s);
+      if (st.isDirectory()) { n += copyDirInto(s, d, replace); continue; }
+      if (!replace && fs.existsSync(d)) continue;   // merge: don't clobber existing files
+      fs.copyFileSync(s, d); n++;
+    } catch {}
+  }
+  return n;
+}
+function emptyDir(dir) {
+  try { for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { recursive: true, force: true }); } catch {}
+}
+
+ipcMain.handle('export-library', async () => {
+  const r = await dialog.showOpenDialog({ title: 'Export Library to…', buttonLabel: 'Export Here', properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  const root = path.join(r.filePaths[0], 'DeskBuddyLibrary');
+  const dirs = LIB_DIRS(), counts = {};
+  try { for (const k of Object.keys(dirs)) counts[k] = copyDirInto(dirs[k], path.join(root, k), true); }
+  catch (e) { return { ok: false, error: e.message }; }
+  const account = await currentAccount();
+  const manifest = { app: 'DeskBuddy', kind: 'library-export', version: app.getVersion(), exportedAt: Date.now(),
+    account: account ? { id: account.id, username: account.username } : null, counts };
+  try { fs.writeFileSync(path.join(root, 'library.json'), JSON.stringify(manifest, null, 2)); } catch (e) { return { ok: false, error: e.message }; }
+  return { ok: true, path: root, counts, account: manifest.account };
+});
+
+ipcMain.handle('import-library', async () => {
+  const r = await dialog.showOpenDialog({ title: 'Select a DeskBuddyLibrary folder', buttonLabel: 'Choose Folder', properties: ['openDirectory'] });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  let root = r.filePaths[0];
+  // Accept either the DeskBuddyLibrary folder itself or a parent that contains it.
+  if (!fs.existsSync(path.join(root, 'library.json')) && fs.existsSync(path.join(root, 'DeskBuddyLibrary', 'library.json')))
+    root = path.join(root, 'DeskBuddyLibrary');
+  let manifest = null; try { manifest = JSON.parse(fs.readFileSync(path.join(root, 'library.json'), 'utf8')); } catch {}
+  if (!manifest || manifest.kind !== 'library-export') return { ok: false, error: 'No DeskBuddy library was found in that folder.' };
+  const c = manifest.counts || {};
+  const who = manifest.account?.username ? `\nExported by: ${manifest.account.username}` : '';
+  const pick = await dialog.showMessageBox({
+    type: 'question', title: 'Import Library', message: 'Import this library?',
+    detail: `Characters: ${c.characters || 0}   Animations: ${c.animations || 0}   Scenes: ${c.scenes || 0}${who}\n\n` +
+            `Merge — keep your current items and add these (duplicates skipped).\nReplace — clear your current library first, then load these.`,
+    buttons: ['Merge', 'Replace', 'Cancel'], defaultId: 0, cancelId: 2, normalizeAccessKeys: true,
+  });
+  if (pick.response === 2) return { canceled: true };
+  const replace = pick.response === 1;
+  const dirs = LIB_DIRS(), counts = {};
+  try {
+    for (const k of Object.keys(dirs)) {
+      fs.mkdirSync(dirs[k], { recursive: true });
+      if (replace) emptyDir(dirs[k]);
+      counts[k] = copyDirInto(path.join(root, k), dirs[k], replace);
+    }
+  } catch (e) { return { ok: false, error: e.message }; }
+  refreshTray();   // newly imported scenes should appear in the tray Scene list
+  return { ok: true, mode: replace ? 'replace' : 'merge', counts };
+});
+
 // ── IPC: scenes (.scenepack) ───────────────────────────────────────────────────
 ipcMain.handle('list-scenes', () => listScenesSync());
 
