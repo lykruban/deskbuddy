@@ -182,32 +182,115 @@ export function normalizeForeground(f) {
   };
 }
 
+// A floor quad with all four corners filled.
+function normFloor(f, d) {
+  return {
+    farLeft:  pt(f?.farLeft,  d.farLeft),
+    farRight: pt(f?.farRight, d.farRight),
+    nearLeft: pt(f?.nearLeft, d.nearLeft),
+    nearRight:pt(f?.nearRight,d.nearRight),
+  };
+}
+// A no-walk zone: a polygon (floor u,v points; may extend outside 0..1) the character
+// must walk AROUND. id + points only.
+const rndZ = (p) => p + Math.random().toString(36).slice(2, 6);
+export function normalizeZone(z) {
+  const pts = (Array.isArray(z?.points) ? z.points : []).map(p => ({ x: num(p?.x, 0.5), y: num(p?.y, 0.5) }));
+  return { id: (typeof z?.id === 'string' && z.id) ? z.id : rndZ('z'), points: pts };
+}
+
+// A WALL: a vertical surface standing on a floor segment (two floor points) rising to
+// `height` (in floor-height units, like a light's height). The character walks around it
+// (it's also a barrier) and casts a shadow onto it. id + base[2] + height.
+export function normalizeWall(w) {
+  const b = Array.isArray(w?.base) ? w.base : [];
+  return {
+    id: (typeof w?.id === 'string' && w.id) ? w.id : rndZ('w'),
+    base: [{ x: num(b[0]?.x, 0.3), y: num(b[0]?.y, 0.5) }, { x: num(b[1]?.x, 0.7), y: num(b[1]?.y, 0.5) }],
+    height: Math.max(0.05, Math.min(10, num(w?.height, 0.45))),
+  };
+}
+
+// A DOOR: a floor point (u,v) marking where the character ENTERS this room/screen. When the
+// character wanders into a screen it heads in via that screen's door (and the scene starts there).
+export function normalizeDoor(dr) {
+  return { id: (typeof dr?.id === 'string' && dr.id) ? dr.id : rndZ('dr'), u: num(dr?.u, 0.5), v: num(dr?.v, 0.95) };
+}
+
+// A single ROOM: one display's worth of a scene — its own wallpaper image, perspective
+// floor, anchors, foreground props, lights/shadow, and no-walk zones. A scene is one or
+// more rooms laid out left→right matching the monitors; the character walks across them
+// (see floor.js global-u helpers and behavior.js multi-room mode).
+export function normalizeRoom(r) {
+  const d = defaultQuad();
+  let fgs = Array.isArray(r?.foregrounds) ? r.foregrounds : [];
+  if (!fgs.length && typeof r?.foreground === 'string' && r.foreground) {
+    fgs = [{ ...defaultForeground(), image: r.foreground, fullscreen: true, label: 'Foreground' }];
+  }
+  return {
+    background: (typeof r?.background === 'string' && r.background) ? r.background : null,
+    floor: normFloor(r?.floor, d),
+    anchors: (Array.isArray(r?.anchors) ? r.anchors : []).map(normalizeAnchor),
+    foregrounds: fgs.map(normalizeForeground),
+    shadow: normalizeShadow(r?.shadow),
+    zones: (Array.isArray(r?.zones) ? r.zones : []).map(normalizeZone),
+    walls: (Array.isArray(r?.walls) ? r.walls : []).map(normalizeWall),
+    doors: (Array.isArray(r?.doors) ? r.doors : []).map(normalizeDoor),
+  };
+}
+
+// Point-in-polygon (ray casting). pts = [{x,y}…] in floor coords.
+export function pointInPolygon(x, y, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
 // Fill in missing/invalid fields so the renderer can trust the shape. Returns a
 // copy, never throws — bad scenepacks degrade gracefully instead of crashing.
-// Also migrates v1 (single `foreground` string) to a fullscreen foreground item.
+// Also migrates v1 (single `foreground` string) and wraps a legacy single-room scene
+// (top-level floor/background/anchors/…) into rooms[0].
 export function normalizeScenepack(raw) {
   const d = defaultScenepack();
   const s = { ...d, ...(raw || {}) };
   s.version = SCENEPACK_VERSION;
   s.character = (typeof raw?.character === 'string' && raw.character) ? raw.character : null;
-  s.floor = {
-    farLeft:  pt(raw?.floor?.farLeft,  d.floor.farLeft),
-    farRight: pt(raw?.floor?.farRight, d.floor.farRight),
-    nearLeft: pt(raw?.floor?.nearLeft, d.floor.nearLeft),
-    nearRight:pt(raw?.floor?.nearRight,d.floor.nearRight),
-  };
   s.wander = { ...d.wander, ...(raw?.wander || {}) };
-  s.shadow = normalizeShadow(raw?.shadow);
   s.charScales = normalizeCharScales(raw?.charScales);
-  s.anchors = (Array.isArray(raw?.anchors) ? raw.anchors : []).map(normalizeAnchor);
 
-  let fgs = Array.isArray(raw?.foregrounds) ? raw.foregrounds : [];
-  if (!fgs.length && typeof raw?.foreground === 'string' && raw.foreground) {
-    fgs = [{ ...defaultForeground(), image: raw.foreground, fullscreen: true, label: 'Foreground' }];
+  // Rooms: explicit rooms[] (multi-display) OR wrap the legacy single-room top-level fields.
+  let rooms;
+  if (Array.isArray(raw?.rooms) && raw.rooms.length) {
+    rooms = raw.rooms.map(normalizeRoom);
+  } else {
+    rooms = [normalizeRoom({
+      background: raw?.background, floor: raw?.floor, anchors: raw?.anchors,
+      foregrounds: raw?.foregrounds, foreground: raw?.foreground, shadow: raw?.shadow, zones: raw?.zones, walls: raw?.walls, doors: raw?.doors,
+    })];
   }
-  s.foregrounds = fgs.map(normalizeForeground);
+  s.rooms = rooms;
+  s.displays = rooms.length;
+
+  // Mirror room 0 to the legacy top-level fields so all the existing single-room rendering
+  // code keeps working unchanged (multi-room code reads s.rooms directly).
+  s.background  = rooms[0].background;
+  s.floor       = rooms[0].floor;
+  s.anchors     = rooms[0].anchors;
+  s.foregrounds = rooms[0].foregrounds;
+  s.shadow      = rooms[0].shadow;
+  s.zones       = rooms[0].zones;
+  s.walls       = rooms[0].walls;
+  s.doors       = rooms[0].doors;
   delete s.foreground;
   return s;
+}
+
+// A blank room (used when the editor adds a display).
+export function defaultRoom() {
+  return { background: null, floor: defaultQuad(), anchors: [], foregrounds: [], shadow: defaultShadow() };
 }
 
 // The unified list of behavior targets: free anchors plus foreground items that

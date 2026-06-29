@@ -99,6 +99,16 @@ export function screenToFloor(quad, x, y) {
   return clampFloor(U / W, V / W);
 }
 
+// Split a global-u coordinate (spanning N rooms left→right, room i = u∈[i,i+1)) into
+// { room, u } with room clamped to [0, N-1] and u in [0,1]. Used by multi-display scenes
+// to figure out which screen/room a character is in and where within it.
+export function splitGlobalU(globalU, nRooms) {
+  let room = Math.floor(globalU);
+  if (room < 0) room = 0;
+  if (room > nRooms - 1) room = nRooms - 1;
+  return { room, u: Math.min(1, Math.max(0, globalU - room)) };
+}
+
 // Default centered quad (a sensible starting shape before the designer adjusts it).
 export function defaultQuad() {
   return {
