@@ -153,6 +153,23 @@ function retargetClipsForSkeleton(clips, fbxRoot, model) {
   return retargetMixamoClips(clips, fbxRoot, (bonePart) => names.has(bonePart) ? bonePart : null, false);
 }
 
+// Turn a hips position track into normalized root motion: each frame's offset from the
+// first frame, divided by the hips standing height (≈ first-frame Y). Result is unitless
+// (fractions of hips height), so it applies to any model at any scale. Y = vertical hop,
+// X/Z = horizontal travel.
+function extractRootMotion(hipsTrack) {
+  const v = hipsTrack.values, times = Array.from(hipsTrack.times);
+  const x0 = v[0], y0 = v[1], z0 = v[2];
+  const ref = Math.max(1e-3, Math.abs(y0));   // hips standing height as the scale reference
+  const dx = [], dy = [], dz = [];
+  for (let i = 0; i < times.length; i++) {
+    dx.push((v[i * 3]     - x0) / ref);
+    dy.push((v[i * 3 + 1] - y0) / ref);
+    dz.push((v[i * 3 + 2] - z0) / ref);
+  }
+  return { times, dx, dy, dz };
+}
+
 // ── Renderer ──────────────────────────────────────────────────────────────────
 const canvas   = document.getElementById('pc');
 const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -172,7 +189,8 @@ controls.enablePan = false; controls.minDistance = 0.5; controls.maxDistance = 8
 scene.add(new THREE.AmbientLight(0xffffff, 0.9));
 const dir = new THREE.DirectionalLight(0xffffff, 1.6);
 dir.position.set(1, 2, 2); scene.add(dir);
-scene.add(new THREE.GridHelper(4, 16, 0x333355, 0x1e1e38));
+const gridHelper = new THREE.GridHelper(4, 16, 0x333355, 0x1e1e38);
+scene.add(gridHelper);
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let model    = null, vrmData = null, mixer = null;
@@ -190,6 +208,17 @@ let basePos   = new THREE.Vector3();
 let baseRotY  = 0;
 let sGroundBones = [];   // foot bones used to pin the model to the floor in preview
 let previewPlaying = false;  // a clip is actively playing in the preview
+let currentPreviewClip = null;   // name of the clip currently previewing
+let previewAction = null;        // the playing AnimationAction (for root-motion sampling)
+// Normalized hips root motion per clip {times,dx,dy,dz} (fractions of hips height) — lets
+// jumps lift off and walks travel on any model. clipMove gates the HORIZONTAL part (travel
+// vs in place); vertical is always applied so feet leave the floor automatically.
+let clipRootMotion = {};
+let clipMove = {};        // { [clipName]: true } = apply horizontal travel; default in place
+// Per-clip tuning: { [name]: { speed, ox, oy, oz, pin } }. speed = playback rate; o* =
+// position offset (fraction of character height); pin = ground lowest contact to floor.
+let clipAdjust = {};
+let walkSpeedVal = 0.16;  // scene wander walk speed (floor-uv / sec)
 let userScaleVal = 1;
 let userOffset   = { x: 0, y: 0, z: 0 };
 let userRotDeg   = { x: 0, y: 0, z: 0 };   // degrees, applied on top of base facing
@@ -408,6 +437,11 @@ async function loadModel(fp, name) {
     savedCustomStates = Array.isArray(manifest.customStates)
       ? manifest.customStates.map(c => ({ ...c }))
       : [];
+    clipRootMotion = (manifest.rootMotion && typeof manifest.rootMotion === 'object') ? { ...manifest.rootMotion } : {};
+    clipMove = (manifest.clipMove && typeof manifest.clipMove === 'object') ? { ...manifest.clipMove } : {};
+    clipAdjust = (manifest.clipAdjust && typeof manifest.clipAdjust === 'object') ? { ...manifest.clipAdjust } : {};
+    walkSpeedVal = (typeof manifest.walkSpeed === 'number') ? manifest.walkSpeed : 0.16;
+    if ($('adj-walk')) { $('adj-walk').value = walkSpeedVal; $('adj-walk-lbl').textContent = walkSpeedVal.toFixed(2); }
     savedRigJoints = manifest.rig?.joints || null;
 
     $('pc').style.display  = 'block';
@@ -451,6 +485,9 @@ function previewClip(clip, once = false) {
     a.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
     a.clampWhenFinished = once; a.reset().play();
     previewPlaying = true;
+    currentPreviewClip = clip.name;
+    a.timeScale = clipAdjust[clip.name]?.speed ?? 1;   // per-clip playback speed
+    previewAction = a; _previewModelH = 0;   // recompute model height for root-motion scaling
   } catch (err) {
     setStatus('Preview error: ' + err.message);
     console.error('clipAction error', err);
@@ -490,6 +527,7 @@ function updateAnimList() {
   const list = $('anim-list');
   const total = modelClips.length + importedClips.length;
   $('anim-count').textContent = total;
+  try { updateAdjustDropdown(); } catch (e) { console.error('adjust dropdown:', e); }
 
   if (!total) {
     list.innerHTML = '<div style="font-size:11px;color:var(--muted)">No animations yet. Import FBX from Mixamo above, or embed animations in your GLB.</div>';
@@ -504,6 +542,7 @@ function updateAnimList() {
       <span class="clip-name" title="${c.name}">${c.name || `Clip ${i+1}`}</span>
       <span class="clip-dur">${c.duration.toFixed(1)}s</span>
       <span class="clip-src src-model">model</span>
+      ${moveBtnHTML(c.name)}
       <button class="clip-play" title="Preview" onclick="previewClipByName('${escName(c.name)}')">▶</button>`;
     list.appendChild(row);
   });
@@ -514,6 +553,7 @@ function updateAnimList() {
       <span class="clip-name" title="${c.name}">${c.name || `FBX ${i+1}`}</span>
       <span class="clip-dur">${c.duration.toFixed(1)}s</span>
       <span class="clip-src src-fbx">Mixamo</span>
+      ${moveBtnHTML(c.name)}
       <button class="clip-play" title="Preview" onclick="previewClipByName('${escName(c.name)}')">▶</button>
       <button class="clip-del" title="Remove" onclick="removeImportedClip(${i})">✕</button>`;
     list.appendChild(row);
@@ -521,6 +561,69 @@ function updateAnimList() {
 }
 
 function escName(n) { return (n || '').replace(/'/g, "\\'"); }
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// ── Per-clip adjust (speed / offset / pin) + walk speed ───────────────────────
+function updateAdjustDropdown() {
+  const sel = $('adj-clip'); if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— select an animation —</option>'
+    + allClips.map(c => `<option value="${escName(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+  if (allClips.some(c => c.name === cur)) sel.value = cur; else { sel.value = ''; adjSelect(); }
+}
+window.adjSelect = () => {
+  const name = $('adj-clip').value;
+  const box = $('adj-controls');
+  if (!name) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const a = clipAdjust[name] || {};
+  $('adj-speed').value = a.speed ?? 1;
+  $('adj-ox').value = a.ox ?? 0; $('adj-oy').value = a.oy ?? 0; $('adj-oz').value = a.oz ?? 0;
+  $('adj-pin').checked = !!a.pin;
+  adjLabels();
+  // Preview the selected clip so edits are seen live.
+  const clip = allClips.find(c => c.name === name);
+  if (clip && model) previewClip(clip);
+};
+function adjLabels() {
+  $('adj-speed-lbl').textContent = (+$('adj-speed').value).toFixed(2) + '×';
+  $('adj-ox-lbl').textContent = (+$('adj-ox').value).toFixed(2);
+  $('adj-oy-lbl').textContent = (+$('adj-oy').value).toFixed(2);
+  $('adj-oz-lbl').textContent = (+$('adj-oz').value).toFixed(2);
+}
+window.adjChange = () => {
+  const name = $('adj-clip').value; if (!name) return;
+  const speed = +$('adj-speed').value, ox = +$('adj-ox').value, oy = +$('adj-oy').value, oz = +$('adj-oz').value, pin = $('adj-pin').checked;
+  const a = {};
+  if (Math.abs(speed - 1) > 1e-3) a.speed = speed;
+  if (Math.abs(ox) > 1e-3) a.ox = ox; if (Math.abs(oy) > 1e-3) a.oy = oy; if (Math.abs(oz) > 1e-3) a.oz = oz;
+  if (pin) a.pin = true;
+  if (Object.keys(a).length) clipAdjust[name] = a; else delete clipAdjust[name];
+  adjLabels();
+  if (previewAction && currentPreviewClip === name) previewAction.timeScale = speed;   // live speed
+};
+window.adjWalkChange = () => {
+  walkSpeedVal = +$('adj-walk').value;
+  $('adj-walk-lbl').textContent = walkSpeedVal.toFixed(2);
+};
+
+// Per-clip Movement toggle. Grounding is now AUTOMATIC — a clip that carries its own
+// root motion (jumps, walks) drives its vertical itself (feet leave the floor naturally);
+// everything else is foot-pinned. This toggle only controls the HORIZONTAL travel of a
+// root-motion clip: "Travel" moves the character as animated, "In place" keeps it put
+// (a forward jump still lifts, it just doesn't drift). Hidden for clips with no root motion.
+function moveBtnHTML(name) {
+  if (!clipRootMotion[name]) return '';   // no root motion → nothing to toggle
+  const on = clipMove[name] === true;
+  const tip = on ? 'Travel: the character moves across the floor as the animation does. Click for in-place.'
+                 : 'In place: plays without horizontal travel (jumps still lift off). Click to let it travel.';
+  return `<button class="clip-move${on ? ' on' : ''}" title="${tip}" onclick="toggleMove('${escName(name)}')">${on ? '🚶 Travel' : '📍 In place'}</button>`;
+}
+window.toggleMove = (name) => {
+  if (clipMove[name]) delete clipMove[name]; else clipMove[name] = true;
+  updateAnimList();
+  setStatus(clipMove[name] ? `"${name}" will travel across the floor` : `"${name}" plays in place`);
+};
 
 window.previewClipByName = (name) => {
   if (!mixer || !model) { setStatus('Load a model first to preview animations'); return; }
@@ -541,43 +644,80 @@ window.removeImportedClip = (idx) => {
 window.openMixamo = () =>
   window.deskbuddy.openExternal('https://www.mixamo.com/#/?type=Motion%2CMotionPack');
 
+// Parse an animation file's bytes and retarget+add its clips to the current character.
+// Shared by direct import and "Add from library". Returns true on success.
+async function processAnimationBytes(buf, filename) {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  let clips = [], sourceRoot = null;
+  if (ext === 'fbx') {
+    const fbx = new FBXLoader().parse(buf, '');
+    clips = fbx.animations || []; sourceRoot = fbx;
+  } else if (ext === 'glb' || ext === 'gltf') {
+    const url = URL.createObjectURL(new Blob([buf]));
+    const gltf = await new Promise((res, rej) => new GLTFLoader().load(url, res, null, rej));
+    URL.revokeObjectURL(url);
+    clips = gltf.animations || []; sourceRoot = gltf.scene;
+  } else if (ext === 'bvh') {
+    const bvh = new BVHLoader().parse(new TextDecoder().decode(buf));
+    clips = bvh.clip ? [bvh.clip] : [];
+    clips.forEach(c => c.tracks.forEach(t => { t.name = t.name.replace(/^\.bones\[(.+?)\]/, '$1'); }));
+    sourceRoot = new THREE.Object3D();
+    if (bvh.skeleton?.bones?.[0]) sourceRoot.add(bvh.skeleton.bones[0]);
+  } else { setStatus('Unsupported animation format: .' + ext); return false; }
+  if (!clips.length) { setStatus('No animation clips found in this file'); return false; }
+  processImportedClips(clips, sourceRoot, filename, ext);
+  return true;
+}
+
 window.importFBXAnimation = async () => {
   if (!model) { setStatus('Load a character model first, then import an animation'); return; }
-
   const r = await window.deskbuddy.importFBXAnimation();
   if (!r) return;
-
   setStatus(`Reading ${r.filename}…`);
   const buf = await window.deskbuddy.readFileBuffer(r.path);
   if (!buf) { setStatus('Cannot read file'); return; }
-  const ext = (r.filename.split('.').pop() || '').toLowerCase();
-
   try {
-    let clips = [], sourceRoot = null;
-    if (ext === 'fbx') {
-      const fbx = new FBXLoader().parse(buf, '');
-      clips = fbx.animations || []; sourceRoot = fbx;
-    } else if (ext === 'glb' || ext === 'gltf') {
-      const url = URL.createObjectURL(new Blob([buf]));
-      const gltf = await new Promise((res, rej) => new GLTFLoader().load(url, res, null, rej));
-      URL.revokeObjectURL(url);
-      clips = gltf.animations || []; sourceRoot = gltf.scene;
-    } else if (ext === 'bvh') {
-      const bvh = new BVHLoader().parse(new TextDecoder().decode(buf));
-      clips = bvh.clip ? [bvh.clip] : [];
-      // BVHLoader names tracks ".bones[Name].position|quaternion" — strip to Name.
-      clips.forEach(c => c.tracks.forEach(t => { t.name = t.name.replace(/^\.bones\[(.+?)\]/, '$1'); }));
-      sourceRoot = new THREE.Object3D();
-      if (bvh.skeleton?.bones?.[0]) sourceRoot.add(bvh.skeleton.bones[0]);
-    } else {
-      setStatus('Unsupported animation format: .' + ext); return;
+    const ok = await processAnimationBytes(buf, r.filename);
+    if (ok) {   // save the source to the app library so every character can reuse it
+      const ext = (r.filename.split('.').pop() || 'fbx').toLowerCase();
+      try { await window.deskbuddy.saveAnimationSource({ name: r.filename.replace(/\.[^.]+$/, ''), bytes: buf, ext }); refreshAnimLibrary(); } catch {}
     }
-    if (!clips.length) { setStatus('No animation clips found in this file'); return; }
-    processImportedClips(clips, sourceRoot, r.filename, ext);
   } catch (err) {
     console.error('animation import error:', err);
     setStatus('Animation error: ' + (err.message || String(err)));
   }
+};
+
+// ── Animation library (saved sources, reusable across characters) ──────────────
+let _animLib = [];
+async function refreshAnimLibrary() {
+  const box = $('anim-library'); if (!box) return;
+  try { _animLib = await window.deskbuddy.listAnimationSources() || []; } catch { _animLib = []; }
+  if (!_animLib.length) {
+    box.innerHTML = '<div style="font-size:11px;color:var(--muted)">No saved animations yet. Import one above — it\'ll be saved here.</div>';
+    return;
+  }
+  box.innerHTML = _animLib.map((it, i) => `
+    <div class="lib-row">
+      <span class="lib-name" title="${escapeHtml(it.name)}">${escapeHtml(it.name)}</span>
+      <span class="lib-ext">${escapeHtml(it.ext)}</span>
+      <button class="lib-add" onclick="addFromLibrary(${i})">+ Add</button>
+      <button class="lib-del" title="Remove from library" onclick="delAnimSource(${i})">✕</button>
+    </div>`).join('');
+}
+window.addFromLibrary = async (i) => {
+  const it = _animLib[i]; if (!it) return;
+  if (!model) { setStatus('Load a character first, then add an animation'); return; }
+  setStatus(`Adding ${it.name}…`);
+  const buf = await window.deskbuddy.readFileBuffer(it.path);
+  if (!buf) { setStatus('Cannot read animation'); return; }
+  try { await processAnimationBytes(buf, it.filename); }
+  catch (err) { console.error('add from library:', err); setStatus('Add error: ' + (err.message || String(err))); }
+};
+window.delAnimSource = async (i) => {
+  const it = _animLib[i]; if (!it) return;
+  await window.deskbuddy.deleteAnimationSource(it.path);
+  refreshAnimLibrary();
 };
 
 // Normalise, retarget, and add a set of loaded clips. `sourceRoot` is the source
@@ -597,6 +737,14 @@ function processImportedClips(clips, sourceRoot, filename, ext) {
   clips.forEach((clip, i) => {
     const generic = !clip.name || ['mixamo.com', 'Armature', 'Take 001', 'Take001', 'default'].includes(clip.name);
     if (generic) clip.name = clips.length > 1 ? `${baseName} ${i + 1}` : baseName;
+  });
+
+  // Step 2.5: stash normalized hips root motion on each clip BEFORE the position tracks
+  // are stripped (Step 4). Normalized by the hips standing height so it transfers to any
+  // model regardless of source units; played back as a modelRoot offset (see overlay).
+  clips.forEach(clip => {
+    const ht = clip.tracks.find(t => t.name === 'mixamorigHips.position');
+    if (ht && ht.values.length >= 6) clip.userData = { ...(clip.userData || {}), rootMotion: extractRootMotion(ht) };
   });
 
   // Step 3: retarget onto the model's bones.
@@ -625,12 +773,14 @@ function processImportedClips(clips, sourceRoot, filename, ext) {
   // Step 4: keep only rotation tracks (in-place animation for a desktop buddy).
   clips.forEach(clip => { clip.tracks = clip.tracks.filter(t => t.name.endsWith('.quaternion')); });
 
-  // Step 5: add (de-duplicating names).
+  // Step 5: add (de-duplicating names). Carry each clip's extracted root motion across
+  // under its FINAL name so playback can find it.
   const added = [];
   clips.forEach(clip => {
     let name = clip.name, n = 1;
     while (importedClips.some(c => c.name === name)) name = `${clip.name} (${++n})`;
     clip.name = name;
+    if (clip.userData?.rootMotion) clipRootMotion[name] = clip.userData.rootMotion;
     importedClips.push(clip);
     added.push(clip.name);
   });
@@ -795,6 +945,7 @@ window.saveCharpack = async () => {
 
   // Serialize imported FBX clips so they persist in the manifest
   const serializedClips = importedClips.map(c => THREE.AnimationClip.toJSON(c));
+  const thumbnail = renderThumbnail();   // actual model image for the marketplace card
 
   const manifest = {
     name,
@@ -810,7 +961,12 @@ window.saveCharpack = async () => {
     importedClips:   serializedClips,
     animationStates: collectStateMap(),
     customStates:    collectCustomStates(),
+    rootMotion:      clipRootMotion,
+    clipMove:        Object.fromEntries(Object.entries(clipMove).filter(([, v]) => v === true)),
+    clipAdjust,
+    walkSpeed:       walkSpeedVal,
     stateSettings:   { sleepAfterMinutes: parseInt($('sleep-sl').value, 10) || 10 },
+    thumbnail:       thumbnail || undefined,
     version:         '1.0.0',
   };
 
@@ -851,26 +1007,124 @@ window.saveCharpack = async () => {
 // pose but float the body on its hips. Each animated frame we pin the lowest foot
 // bone to the grid floor (y=0), matching what the overlay does on the desktop.
 const _sFootWP = new THREE.Vector3();
+let sSinkBones = [];   // broad contact set (feet, hands, head) for "pin to floor"
 function collectGroundBones() {
-  sGroundBones = [];
+  sGroundBones = []; sSinkBones = [];
+  const FEET_V = ['leftFoot', 'rightFoot', 'leftToes', 'rightToes'];
+  const SINK_V = [...FEET_V, 'leftHand', 'rightHand', 'head'];
+  const FEET_M = ['mixamorigLeftFoot', 'mixamorigRightFoot', 'mixamorigLeftToeBase', 'mixamorigRightToeBase'];
+  const SINK_M = [...FEET_M, 'mixamorigLeftHand', 'mixamorigRightHand', 'mixamorigHead'];
   if (vrmData?.humanoid?.getRawBoneNode) {
-    ['leftFoot', 'rightFoot', 'leftToes', 'rightToes'].forEach(n => {
-      const b = vrmData.humanoid.getRawBoneNode(n); if (b) sGroundBones.push(b);
-    });
+    FEET_V.forEach(n => { const b = vrmData.humanoid.getRawBoneNode(n); if (b) sGroundBones.push(b); });
+    SINK_V.forEach(n => { const b = vrmData.humanoid.getRawBoneNode(n); if (b) sSinkBones.push(b); });
   }
   if (!sGroundBones.length && model) {
     const byName = {};
     model.traverse(o => { if (o.isBone) byName[o.name] = o; });
-    ['mixamorigLeftFoot', 'mixamorigRightFoot', 'mixamorigLeftToeBase', 'mixamorigRightToeBase']
-      .forEach(n => { if (byName[n]) sGroundBones.push(byName[n]); });
+    FEET_M.forEach(n => { if (byName[n]) sGroundBones.push(byName[n]); });
+    SINK_M.forEach(n => { if (byName[n]) sSinkBones.push(byName[n]); });
+  }
+  if (!sSinkBones.length) sSinkBones = sGroundBones.slice();
+}
+function _lowestPreviewY(bones) {
+  let lo = Infinity;
+  for (const b of bones) { b.getWorldPosition(_sFootWP); if (_sFootWP.y < lo) lo = _sFootWP.y; }
+  return lo;
+}
+// Sample a normalized root-motion curve at time t (looping).
+function sampleRootMotion(rm, t) {
+  const T = rm.times; if (!T || !T.length) return { dx: 0, dy: 0, dz: 0 };
+  const dur = T[T.length - 1] || 1; let tt = t % dur; if (tt < 0) tt += dur;
+  let i = 0; while (i < T.length - 1 && T[i + 1] < tt) i++;
+  const j = Math.min(i + 1, T.length - 1);
+  const f = T[j] > T[i] ? (tt - T[i]) / (T[j] - T[i]) : 0;
+  const L = (a) => a[i] + (a[j] - a[i]) * f;
+  return { dx: L(rm.dx), dy: L(rm.dy), dz: L(rm.dz) };
+}
+let _previewModelH = 0;
+function previewCharHeight() {
+  if (_previewModelH) return _previewModelH;
+  if (!model) return 1;
+  const b = new THREE.Box3().setFromObject(model);
+  _previewModelH = Math.max(0.1, b.max.y - b.min.y);
+  return _previewModelH;
+}
+// Unified preview pose: reset to base, apply vertical handling, then the manual offset.
+// Reset-based each frame so nothing accumulates/drifts.
+//   pin       → ground the lowest contact (feet/hands/head) to the floor (floor moves)
+//   rootmotion→ lift by the hop (jumps) + horizontal drift for Travel clips
+//   else      → foot-pin (rotation-only clips like sit/idle)
+function applyPreviewPose() {
+  if (!model) return;
+  const name = currentPreviewClip;
+  const adj = clipAdjust[name] || {};
+  applyTransform();
+  model.updateMatrixWorld(true);
+  const h = previewCharHeight();
+  if (adj.pin && sSinkBones.length) {
+    const lo = _lowestPreviewY(sSinkBones);
+    if (isFinite(lo)) model.position.y += (0 - lo);
+  } else if (clipRootMotion[name] && previewAction) {
+    const s = sampleRootMotion(clipRootMotion[name], previewAction.time);
+    model.position.y += s.dy * h * 0.55;   // 0.55 ≈ floor→hips fraction of total height
+    if (clipMove[name]) { model.position.x += s.dx * h * 0.55; model.position.z += s.dz * h * 0.55; }
+  } else if (sGroundBones.length) {
+    const lo = _lowestPreviewY(sGroundBones);
+    if (isFinite(lo)) model.position.y += (0 - lo);
+  }
+  if (adj.ox || adj.oy || adj.oz) {     // manual offset (fraction of character height)
+    model.position.x += (adj.ox || 0) * h;
+    model.position.y += (adj.oy || 0) * h;
+    model.position.z += (adj.oz || 0) * h;
   }
 }
-function groundPreview() {
-  if (!model || !sGroundBones.length) return;
-  model.updateMatrixWorld(true);
-  let lo = Infinity;
-  for (const b of sGroundBones) { b.getWorldPosition(_sFootWP); if (_sFootWP.y < lo) lo = _sFootWP.y; }
-  if (isFinite(lo)) model.position.y += (0 - lo);   // pin lowest foot to the grid floor
+
+// ── Model thumbnail ──────────────────────────────────────────────────────────
+// Render the loaded model (no grid, transparent background) to an offscreen target and
+// read it back as a PNG data URL. Stored in the manifest so the marketplace card shows
+// the actual character instead of a generic emoji. Uses a render target + pixel readback
+// (not canvas.toDataURL) so it's reliable regardless of preserveDrawingBuffer.
+function renderThumbnail(size = 256) {
+  if (!model) return null;
+  try {
+    const box = new THREE.Box3().setFromObject(model);
+    if (box.isEmpty()) return null;
+    const c = box.getCenter(new THREE.Vector3());
+    const s = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(s.x, s.y, s.z) || 1;
+    const fov = 35;
+    const cam = new THREE.PerspectiveCamera(fov, 1, 0.01, 1000);
+    const dist = (maxDim / (2 * Math.tan(fov * Math.PI / 360))) * 1.45;
+    cam.position.set(c.x, c.y + s.y * 0.06, c.z + dist);
+    cam.lookAt(c.x, c.y, c.z);
+
+    const rt = new THREE.WebGLRenderTarget(size, size, { samples: 4 });
+    const gridWas = gridHelper.visible; gridHelper.visible = false;
+    const prevTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(rt);
+    renderer.setClearColor(0x000000, 0);
+    renderer.clear();
+    renderer.render(scene, cam);
+    renderer.setRenderTarget(prevTarget);
+    gridHelper.visible = gridWas;
+
+    const buf = new Uint8Array(size * size * 4);
+    renderer.readRenderTargetPixels(rt, 0, 0, size, size, buf);
+    rt.dispose();
+
+    const cnv = document.createElement('canvas'); cnv.width = size; cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    const img = ctx.createImageData(size, size);
+    for (let y = 0; y < size; y++) {            // GL origin is bottom-left → flip vertically
+      const sy = size - 1 - y;
+      for (let x = 0; x < size; x++) {
+        const si = (sy * size + x) * 4, di = (y * size + x) * 4;
+        img.data[di] = buf[si]; img.data[di+1] = buf[si+1]; img.data[di+2] = buf[si+2]; img.data[di+3] = buf[si+3];
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return cnv.toDataURL('image/png');
+  } catch (e) { console.warn('thumbnail render failed:', e); return null; }
 }
 
 // ── Render loop ───────────────────────────────────────────────────────────────
@@ -880,9 +1134,8 @@ function animate() {
   controls.update();
   if (mixer) mixer.update(dt);       // 1. mixer writes to normalized bones
   if (vrmData?.update) vrmData.update(dt); // 2. VRM converts normalized → raw bone space
-  // Ground the feet only while a clip is actually playing (leaves the manual
-  // rig/transform editing free to position the model however the user wants).
-  if (previewPlaying) groundPreview();
+  // Pose the model while a clip plays: grounding / root-motion lift / pin-to-floor + offset.
+  if (previewPlaying) applyPreviewPose();
   renderer.render(scene, camera);
 }
 animate();
@@ -897,7 +1150,10 @@ animate();
 // floor-placed foreground props (depth-sorted, optionally animation anchors), and
 // anchors (random + timed). New images are inlined as `_dataUrl` on the item and
 // `_bgData` on the scene; main writes them to disk on save.
-const SE = { scene: null, bgImg: null, fgImgs: {}, sel: null, selKind: null, drag: null, inited: false };
+const SE = { scene: null, bgImg: null, fgImgs: {}, sel: null, selKind: null, drag: null, inited: false,
+  // Editor layer system: `tool` = what an empty-click places / what's grabbable; `visible`
+  // hides layers to declutter; `zoneDraft` = the no-walk polygon being drawn.
+  tool: 'select', visible: { floor: true, anchors: true, props: true, lights: true, zones: true, walls: true, doors: true }, zoneDraft: null, wallDraft: null, activeRoom: 0 };
 
 const seRnd = (p) => p + Math.random().toString(36).slice(2, 8);
 // ── Scene character binding + per-character size ───────────────────────────────
@@ -937,7 +1193,7 @@ function refreshCharSizeUI() {
 
 function defaultEditorScene() {
   return {
-    version: 2, name: 'My Scene', character: null, background: null, foregrounds: [], charScales: {},
+    version: 2, name: 'My Scene', character: null, background: null, foregrounds: [], charScales: {}, zones: [], walls: [], doors: [],
     floor: { farLeft:{x:0.28,y:0.50}, farRight:{x:0.72,y:0.50}, nearLeft:{x:0.06,y:0.95}, nearRight:{x:0.94,y:0.95} },
     anchors: [], wander: { enabled: true, idleMin: 3, idleMax: 7, walkSpeed: 0.16 },
     // Same {enabled, lights:[…]} shape that loadEditorShadow() produces, so a brand-new
@@ -1024,6 +1280,7 @@ function renderShadowLights() {
       ${slider(i, 'intensity', 'Intensity', 0, 1, 0.02)}
       ${slider(i, 'softness', 'Softness', 0, 1, 0.05)}
     </div>`).join('');
+  if (typeof attachPrecisionInputs === 'function') attachPrecisionInputs(box);   // precision boxes on the new sliders
 }
 function newAnchor(u, v) {
   return { id: seRnd('a'), label: 'Anchor ' + ((SE.scene.anchors?.length || 0) + 1),
@@ -1034,8 +1291,10 @@ function newForeground(u, v) {
     image: null, u, v, scale: 1, fullscreen: false, layer: 0,
     anchor: { enabled: false, animation: null, facing: 'auto', offset: { x: 0, y: 0 }, repeatMinutes: 0, dwell: 0 } };
 }
+function newDoor(u, v) { return { id: seRnd('dr'), u, v }; }
 const findAnchor = (id) => SE.scene.anchors.find(a => a.id === id);
 const findFg = (id) => SE.scene.foregrounds.find(f => f.id === id);
+const findDoor = (id) => (SE.scene.doors || []).find(d => d.id === id);
 
 const seClamp01 = (v) => Math.min(1, Math.max(0, v));
 function seDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -1043,16 +1302,98 @@ function seDist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 // dragged outside the image (e.g. a near edge that runs off-screen). The image
 // occupies floor coords 0..1; the canvas spans floor coords [-PAD, 1+PAD].
 const STAGE_PAD = 0.2;
-const sxFrac = (n) => (n + STAGE_PAD) / (1 + 2 * STAGE_PAD);   // floor coord → 0..1 canvas fraction
-const nxFrac = (fr) => fr * (1 + 2 * STAGE_PAD) - STAGE_PAD;   // 0..1 canvas fraction → floor coord
+// Scroll-to-zoom view transform (cursor-centred). zoom<1 = zoomed out (drag corners far
+// outside the image); zoom>1 = zoomed in for precise placement. Reset with the button.
+let view = { zoom: 1, panX: 0, panY: 0 };
+const baseFrac = (n) => (n + STAGE_PAD) / (1 + 2 * STAGE_PAD);   // floor coord → base 0..1
+const sxFrac = (n) => 0.5 + (baseFrac(n) - 0.5) * view.zoom + view.panX;
+const syFrac = (n) => 0.5 + (baseFrac(n) - 0.5) * view.zoom + view.panY;
+const nxFrac = (fr) => ((fr - 0.5 - view.panX) / view.zoom + 0.5) * (1 + 2 * STAGE_PAD) - STAGE_PAD;
+const nyFrac = (fr) => ((fr - 0.5 - view.panY) / view.zoom + 0.5) * (1 + 2 * STAGE_PAD) - STAGE_PAD;
 const PXx = (n, W) => sxFrac(n) * W;
-const PXy = (n, H) => sxFrac(n) * H;
+const PXy = (n, H) => syFrac(n) * H;
 function seStageXY(e) {
   const cv = $('scene-stage'), r = cv.getBoundingClientRect();
-  // Clamp to the canvas (fraction 0..1), which maps to floor coords [-PAD, 1+PAD] —
-  // so a dragged corner can leave the image but stays visible and grabbable.
-  return { x: nxFrac(seClamp01((e.clientX - r.left) / r.width)), y: nxFrac(seClamp01((e.clientY - r.top) / r.height)) };
+  // Canvas fraction 0..1 maps (through zoom/pan) to floor coords — a dragged corner can
+  // leave the image but stays visible and grabbable.
+  return { x: nxFrac(seClamp01((e.clientX - r.left) / r.width)), y: nyFrac(seClamp01((e.clientY - r.top) / r.height)) };
 }
+function seResetView() { view = { zoom: 1, panX: 0, panY: 0 }; if ($('scene-stage')) drawStage(); }
+window.seResetView = seResetView;
+
+// Give every settings slider a synced number box so you can type ANY value (the slider's
+// range auto-widens to accept it). Scans ALL range sliders (incl. dynamically-built shadow
+// light sliders). Idempotent — safe to call repeatedly after any UI rebuild.
+function attachPrecisionInputs(root) {
+  const sliders = (root || document).querySelectorAll('input[type="range"]');
+  for (const sl of sliders) {
+    if (sl._precAttached) continue;
+    sl._precAttached = true;
+    sl.step = 'any';   // continuous — so a typed value like 1.3242 isn't rounded to the slider's step
+    const box = document.createElement('input');
+    box.type = 'number'; box.step = 'any';   // accept any decimal (no step validation)
+    box.value = sl.value;
+    box.style.cssText = 'width:66px;margin-left:8px;padding:3px 6px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;vertical-align:middle';
+    box.addEventListener('input', () => {
+      const v = parseFloat(box.value); if (!isFinite(v)) return;
+      if (v < parseFloat(sl.min)) sl.min = v;       // widen the range to accept any number (e.g. 8)
+      if (v > parseFloat(sl.max)) sl.max = v;
+      sl.value = v;
+      sl.dispatchEvent(new Event('input', { bubbles: true }));   // fire the slider's own handler
+    });
+    // Only mirror slider→box while the user is dragging the SLIDER (not when they're typing),
+    // so typing a precise value never gets snapped back.
+    sl.addEventListener('input', (e) => { if (e.isTrusted) box.value = (+sl.value).toString(); });
+    sl.insertAdjacentElement('afterend', box);
+  }
+}
+window.attachPrecisionInputs = attachPrecisionInputs;
+
+// ── Editor tools + layer visibility + no-walk zone drawing ────────────────────
+const toolLayer = (t) => ({ floor: 'floor', anchor: 'anchors', prop: 'props', light: 'lights', zone: 'zones', wall: 'walls', door: 'doors' }[t] || null);
+function seToolHint(t) {
+  return ({
+    select: 'Select: click an item to pick it (settings on the left), drag to move, press X to delete · middle-drag to pan',
+    floor: 'Floor: drag the 4 corners — scroll to zoom out and place them far outside the image',
+    anchor: 'Anchor: click empty floor to add a stroll point; drag to move',
+    prop: 'Prop: click to drop a prop, then set its image in the Props list below',
+    light: 'Light: drag the ☀ on the floor (lower = longer shadow)',
+    zone: 'No-walk: click to add corners around an area the character must avoid, then ✓ Finish (click the first point to close)',
+    wall: 'Wall: click two floor points for the base — the character walks around it and casts a shadow on it. Drag ◆ ends to move, ▲ to set height.',
+    door: 'Door: click the floor to mark where the character ENTERS this screen — it walks in via the door when crossing between screens.',
+  })[t] || '';
+}
+// Wall in the editor: a base segment on the floor raised vertically by `height`. Returns
+// the raised (top) screen point for a base point (floor-screen 0..1 space).
+function wallTopScreen(f, base, height) {
+  const s = floorToScreen(f, base.x, base.y);
+  return { x: s.x, y: s.y - height * depthScaleAt(f, base.y) * 0.45 };
+}
+window.seSetTool = (t) => {
+  if (SE.tool === 'zone' && t !== 'zone') { commitZoneDraft(); }   // leaving zone tool commits a finished draft
+  SE.tool = t; SE.sel = null; SE.selKind = null;
+  document.querySelectorAll('.se-tool[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  if ($('se-zone-finish')) $('se-zone-finish').style.display = (t === 'zone' && SE.zoneDraft && SE.zoneDraft.length) ? '' : (t === 'zone' ? 'none' : 'none');
+  const layer = toolLayer(t);
+  if (layer && !SE.visible[layer]) { SE.visible[layer] = true; refreshEyes(); }
+  setStatus(seToolHint(t));
+  drawStage();
+};
+function refreshEyes() {
+  document.querySelectorAll('.se-eye[data-eye]').forEach(b => b.classList.toggle('off', !SE.visible[b.dataset.eye]));
+}
+window.seToggleEye = (layer) => { SE.visible[layer] = !SE.visible[layer]; refreshEyes(); drawStage(); };
+function commitZoneDraft() {
+  if (SE.zoneDraft && SE.zoneDraft.length >= 3) {
+    SE.scene.zones = SE.scene.zones || [];
+    SE.scene.zones.push({ id: seRnd('z'), points: SE.zoneDraft.map(p => ({ x: p.x, y: p.y })) });
+    setStatus('No-walk zone added — the character will walk around it');
+  }
+  SE.zoneDraft = null;
+  if ($('se-zone-finish')) $('se-zone-finish').style.display = 'none';
+}
+window.seFinishZone = () => { commitZoneDraft(); drawStage(); };
+window.seClearZones = () => { SE.scene.zones = []; SE.zoneDraft = null; drawStage(); setStatus('No-walk zones cleared'); };
 
 function drawStage() {
   const cv = $('scene-stage'), ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
@@ -1067,32 +1408,106 @@ function drawStage() {
   ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
   ctx.strokeRect(ix + 0.5, iy + 0.5, iw - 1, ih - 1); ctx.setLineDash([]);
   const f = SE.scene.floor;
+  const dim = (layer) => SE.tool !== 'select' && toolLayer(SE.tool) !== layer ? 0.45 : 1;   // fade inactive layers
   // floor quad
-  const ring = [f.farLeft, f.farRight, f.nearRight, f.nearLeft];
-  ctx.strokeStyle = 'rgba(99,102,241,0.9)'; ctx.lineWidth = 2; ctx.beginPath();
-  ring.forEach((p, i) => { const x = PXx(p.x, W), y = PXy(p.y, H); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-  ctx.closePath(); ctx.fillStyle = 'rgba(99,102,241,0.10)'; ctx.fill(); ctx.stroke();
+  if (SE.visible.floor) {
+    ctx.globalAlpha = dim('floor');
+    const ring = [f.farLeft, f.farRight, f.nearRight, f.nearLeft];
+    ctx.strokeStyle = 'rgba(99,102,241,0.9)'; ctx.lineWidth = 2; ctx.beginPath();
+    ring.forEach((p, i) => { const x = PXx(p.x, W), y = PXy(p.y, H); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath(); ctx.fillStyle = 'rgba(99,102,241,0.10)'; ctx.fill(); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // no-walk zones (red) + the in-progress draft
+  if (SE.visible.zones) {
+    ctx.globalAlpha = dim('zones');
+    const drawPoly = (pts, fill, stroke, open, handles) => {
+      if (!pts.length) return;
+      const S = pts.map(p => floorToScreen(f, p.x, p.y));   // zone points are floor (u,v)
+      ctx.beginPath();
+      S.forEach((s, i) => { const x = PXx(s.x, W), y = PXy(s.y, H); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      if (!open) ctx.closePath();
+      ctx.fillStyle = fill; if (!open) ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke();
+      if (handles) S.forEach(s => { const x = PXx(s.x, W), y = PXy(s.y, H); ctx.fillStyle = '#ef4444'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.rect(x - 4, y - 4, 8, 8); ctx.fill(); ctx.stroke(); });
+    };
+    (SE.scene.zones || []).forEach(z => {
+      const sel = z.id === SE.sel && SE.selKind === 'zone';
+      drawPoly(z.points, sel ? 'rgba(245,158,11,0.22)' : 'rgba(239,68,68,0.22)', sel ? '#f59e0b' : 'rgba(239,68,68,0.9)', false, SE.tool === 'zone' || sel);
+    });
+    if (SE.zoneDraft && SE.zoneDraft.length) drawPoly(SE.zoneDraft, 'rgba(239,68,68,0.15)', 'rgba(239,68,68,0.8)', true, true);
+    ctx.globalAlpha = 1;
+  }
+  // walls (vertical surfaces) — translucent quad rising from the base, with ◆ end + ▲ height handles
+  if (SE.visible.walls) {
+    ctx.globalAlpha = dim('walls');
+    const drawWall = (w, draftEnd, sel) => {
+      const b0 = w.base[0], b1 = draftEnd || w.base[1];
+      const s0 = floorToScreen(f, b0.x, b0.y), s1 = floorToScreen(f, b1.x, b1.y);
+      const t0 = wallTopScreen(f, b0, w.height), t1 = wallTopScreen(f, b1, w.height);
+      const P = (s) => [PXx(s.x, W), PXy(s.y, H)];
+      const [bx0, by0] = P(s0), [bx1, by1] = P(s1), [tx0, ty0] = P(t0), [tx1, ty1] = P(t1);
+      ctx.beginPath(); ctx.moveTo(bx0, by0); ctx.lineTo(bx1, by1); ctx.lineTo(tx1, ty1); ctx.lineTo(tx0, ty0); ctx.closePath();
+      ctx.fillStyle = sel ? 'rgba(245,158,11,0.30)' : 'rgba(148,163,184,0.28)'; ctx.fill();
+      ctx.strokeStyle = sel ? '#f59e0b' : 'rgba(203,213,225,0.95)'; ctx.lineWidth = sel ? 2.5 : 2; ctx.stroke();
+      // base line bolder
+      ctx.beginPath(); ctx.moveTo(bx0, by0); ctx.lineTo(bx1, by1); ctx.strokeStyle = sel ? '#f59e0b' : '#cbd5e1'; ctx.lineWidth = 3; ctx.stroke();
+      if ((SE.tool === 'wall' || sel) && !draftEnd) {
+        [[bx0, by0], [bx1, by1]].forEach(([x, y]) => { ctx.fillStyle = '#cbd5e1'; ctx.strokeStyle = '#0d0d12'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x + 5, y); ctx.lineTo(x, y + 5); ctx.lineTo(x - 5, y); ctx.closePath(); ctx.fill(); ctx.stroke(); });
+        const mx = (tx0 + tx1) / 2, my = (ty0 + ty1) / 2;   // ▲ height handle
+        ctx.fillStyle = '#38bdf8'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(mx, my - 6); ctx.lineTo(mx + 6, my + 5); ctx.lineTo(mx - 6, my + 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+    };
+    (SE.scene.walls || []).forEach(w => drawWall(w, null, w.id === SE.sel && SE.selKind === 'wall'));
+    ctx.globalAlpha = 1;
+  }
   // foreground props (farther first so nearer ones overlap)
-  (SE.scene.foregrounds || []).slice().sort((a, b) => a.v - b.v).forEach(it => drawFgItem(ctx, it, W, H));
-  // floor corner handles (on top of props so they're grabbable)
-  [f.farLeft, f.farRight, f.nearLeft, f.nearRight].forEach(p => {
-    const x = PXx(p.x, W), y = PXy(p.y, H);
-    ctx.fillStyle = '#6366f1'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.rect(x - 5, y - 5, 10, 10); ctx.fill(); ctx.stroke();
-  });
+  if (SE.visible.props) { ctx.globalAlpha = dim('props'); (SE.scene.foregrounds || []).slice().sort((a, b) => a.v - b.v).forEach(it => drawFgItem(ctx, it, W, H)); ctx.globalAlpha = 1; }
+  // floor corner handles
+  if (SE.visible.floor) {
+    ctx.globalAlpha = dim('floor');
+    [f.farLeft, f.farRight, f.nearLeft, f.nearRight].forEach(p => {
+      const x = PXx(p.x, W), y = PXy(p.y, H);
+      ctx.fillStyle = '#6366f1'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.rect(x - 5, y - 5, 10, 10); ctx.fill(); ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
   // anchors
-  SE.scene.anchors.forEach(a => {
-    const s = floorToScreen(f, a.u, a.v), x = PXx(s.x, W), y = PXy(s.y, H);
-    const seld = a.id === SE.sel && SE.selKind === 'anchor';
-    ctx.fillStyle = seld ? '#f59e0b' : (a.repeatMinutes > 0 ? '#38bdf8' : '#22c55e');
-    ctx.beginPath(); ctx.arc(x, y, seld ? 7 : 6, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#0d0d12'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(a.label || '', x, y - 10);
-  });
+  if (SE.visible.anchors) {
+    ctx.globalAlpha = dim('anchors');
+    SE.scene.anchors.forEach(a => {
+      const s = floorToScreen(f, a.u, a.v), x = PXx(s.x, W), y = PXy(s.y, H);
+      const seld = a.id === SE.sel && SE.selKind === 'anchor';
+      ctx.fillStyle = seld ? '#f59e0b' : (a.repeatMinutes > 0 ? '#38bdf8' : '#22c55e');
+      ctx.beginPath(); ctx.arc(x, y, seld ? 7 : 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#0d0d12'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(a.label || '', x, y - 10);
+    });
+    ctx.globalAlpha = 1;
+  }
+  // doors (entry markers) — a little green doorway standing on its floor point
+  if (SE.visible.doors) {
+    ctx.globalAlpha = dim('doors');
+    (SE.scene.doors || []).forEach(d => {
+      const s = floorToScreen(f, d.u, d.v), x = PXx(s.x, W), y = PXy(s.y, H);
+      const sel = d.id === SE.sel && SE.selKind === 'door';
+      const w = 13, h = 21;
+      ctx.fillStyle = sel ? 'rgba(245,158,11,0.85)' : 'rgba(52,211,153,0.85)';
+      ctx.strokeStyle = '#0d0d12'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.rect(x - w / 2, y - h, w, h); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#0d0d12'; ctx.beginPath(); ctx.arc(x + w / 4, y - h / 2, 1.8, 0, Math.PI * 2); ctx.fill();   // knob
+      ctx.fillStyle = '#fff'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Door', x, y - h - 4);
+    });
+    ctx.globalAlpha = 1;
+  }
   // light handles (draggable ☀) — drawn last so they sit on top and stay grabbable
-  const sh = SE.scene.shadow;
-  if (sh?.enabled && Array.isArray(sh.lights)) sh.lights.forEach((L, i) => drawLightHandle(ctx, L, i, W, H));
+  if (SE.visible.lights) {
+    ctx.globalAlpha = dim('lights');
+    const sh = SE.scene.shadow;
+    if (sh?.enabled && Array.isArray(sh.lights)) sh.lights.forEach((L, i) => drawLightHandle(ctx, L, i, W, H));
+    ctx.globalAlpha = 1;
+  }
 }
 
 const hexA = (hex, a) => {
@@ -1158,65 +1573,314 @@ function drawFgItem(ctx, it, W, H) {
   }
 }
 
-function seInitStage() {
-  if (SE.inited) return; SE.inited = true;
-  const cv = $('scene-stage');
-  cv.addEventListener('pointerdown', (e) => {
-    cv.setPointerCapture(e.pointerId);
-    const p = seStageXY(e), f = SE.scene.floor;
-    // light handles first — they sit on top and must stay grabbable. Grab by the
-    // glowing orb OR the floor base.
+// Find a draggable handle under point p (image-space). In Select mode every layer is
+// grabbable; with a specific tool only that layer is. Returns a drag descriptor or null.
+function grabHandle(p, f, t) {
+  const can = (layer) => (t === 'select' || toolLayer(t) === layer) && SE.visible[layer];
+  if (can('lights')) {
     const sh = SE.scene.shadow;
     if (sh?.enabled && Array.isArray(sh.lights)) {
       for (let i = 0; i < sh.lights.length; i++) {
         const L = sh.lights[i], o = lightOrbPos(L);
-        if (seDist(p, o) < 0.07 || seDist(p, o.base) < 0.06) { SE.drag = { type: 'light', idx: i }; return; }
+        // Grab the orb OR its floor base; remember the floor-space offset so the light
+        // follows the cursor 1:1 (no pole-feedback "magnet" snapping it to the edges).
+        if (seDist(p, o) < 0.07 || seDist(p, o.base) < 0.08) {
+          const uv = screenToFloor(f, p.x, p.y);
+          return { type: 'light', idx: i, du: L.u - uv.u, dv: L.v - uv.v };
+        }
       }
     }
-    for (const k of ['farLeft', 'farRight', 'nearLeft', 'nearRight']) {
-      if (seDist(p, f[k]) < 0.05) { SE.drag = { type: 'corner', key: k }; return; }
+  }
+  if (can('floor')) {
+    for (const k of ['farLeft', 'farRight', 'nearLeft', 'nearRight'])
+      if (seDist(p, f[k]) < 0.05) return { type: 'corner', key: k };
+  }
+  if (can('walls')) {
+    const ws = SE.scene.walls || [];
+    for (let wi = 0; wi < ws.length; wi++) {
+      const w = ws[wi], mid = { x: (w.base[0].x + w.base[1].x) / 2, y: (w.base[0].y + w.base[1].y) / 2 };
+      if (seDist(p, wallTopScreen(f, mid, w.height)) < 0.04) return { type: 'wallh', wi, id: w.id };
+      for (let pi = 0; pi < 2; pi++) if (seDist(p, floorToScreen(f, w.base[pi].x, w.base[pi].y)) < 0.04) return { type: 'wallpt', wi, pi, id: w.id };
     }
-    // foreground bases (nearer first — they sit on top)
+  }
+  if (can('zones')) {
+    const zs = SE.scene.zones || [];
+    for (let zi = 0; zi < zs.length; zi++) for (let pi = 0; pi < zs[zi].points.length; pi++)
+      if (seDist(p, floorToScreen(f, zs[zi].points[pi].x, zs[zi].points[pi].y)) < 0.035) return { type: 'zonept', zi, pi, id: zs[zi].id };
+  }
+  if (can('props')) {
     const fgs = (SE.scene.foregrounds || []).filter(x => !x.fullscreen).slice().sort((a, b) => b.v - a.v);
-    for (const it of fgs) {
-      if (seDist(p, floorToScreen(f, it.u, it.v)) < 0.06) { selectFg(it.id); SE.drag = { type: 'fg', id: it.id }; return; }
+    for (const it of fgs) if (seDist(p, floorToScreen(f, it.u, it.v)) < 0.06) return { type: 'fg', id: it.id };
+  }
+  if (can('anchors')) {
+    for (const a of SE.scene.anchors) if (seDist(p, floorToScreen(f, a.u, a.v)) < 0.05) return { type: 'anchor', id: a.id };
+  }
+  if (can('doors')) {
+    for (const dr of (SE.scene.doors || [])) if (seDist(p, floorToScreen(f, dr.u, dr.v)) < 0.05) return { type: 'door', id: dr.id };
+  }
+  return null;
+}
+// Sync the inspector selection to whatever handle was grabbed.
+function applyHandleSelection(g) {
+  if (g.type === 'fg') selectFg(g.id);
+  else if (g.type === 'anchor') selectAnchor(g.id);
+  else if (g.type === 'wallpt' || g.type === 'wallh') selectWall(g.id);
+  else if (g.type === 'zonept') selectZone(g.id);
+  else if (g.type === 'door') selectDoor(g.id);
+  else { SE.sel = null; SE.selKind = null; clearSelUI(); drawStage(); }   // light/corner: no card
+}
+function pointInPoly(p, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+    if (((yi > p.y) !== (yj > p.y)) && (p.x < (xj - xi) * (p.y - yi) / ((yj - yi) || 1e-9) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function wallBodyHit(p, f) {
+  if (!SE.visible.walls) return null;
+  const ws = SE.scene.walls || [];
+  for (let i = ws.length - 1; i >= 0; i--) {
+    const w = ws[i];
+    const b0 = floorToScreen(f, w.base[0].x, w.base[0].y), b1 = floorToScreen(f, w.base[1].x, w.base[1].y);
+    const t0 = wallTopScreen(f, w.base[0], w.height), t1 = wallTopScreen(f, w.base[1], w.height);
+    if (pointInPoly(p, [b0, b1, t1, t0])) return w.id;
+  }
+  return null;
+}
+function zoneAreaHit(p, f) {
+  if (!SE.visible.zones) return null;
+  const zs = SE.scene.zones || [];
+  for (let i = zs.length - 1; i >= 0; i--) {
+    const pts = zs[i].points.map(q => floorToScreen(f, q.x, q.y));
+    if (pts.length >= 3 && pointInPoly(p, pts)) return zs[i].id;
+  }
+  return null;
+}
+function sceneDeleteSelected() {
+  if (!SE.selKind) return false;
+  if (SE.selKind === 'fg') sceneFgDelete();
+  else if (SE.selKind === 'anchor') sceneAnchorDelete();
+  else if (SE.selKind === 'wall') sceneWallDelete();
+  else if (SE.selKind === 'zone') sceneZoneDelete();
+  else if (SE.selKind === 'door') sceneDoorDelete();
+  else return false;
+  return true;
+}
+
+function seInitStage() {
+  if (SE.inited) return; SE.inited = true;
+  const cv = $('scene-stage');
+  // Scroll to zoom (cursor-centred): scroll down = zoom out (place the perspective box /
+  // anchors far outside the image), scroll up = zoom in for precise work.
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = cv.getBoundingClientRect();
+    const fx = seClamp01((e.clientX - r.left) / r.width), fy = seClamp01((e.clientY - r.top) / r.height);
+    const uAtCursor = nxFrac(fx), vAtCursor = nyFrac(fy);
+    view.zoom = Math.max(0.2, Math.min(6, view.zoom * (e.deltaY > 0 ? 0.9 : 1.1)));
+    // keep the floor point under the cursor fixed
+    view.panX = fx - 0.5 - (baseFrac(uAtCursor) - 0.5) * view.zoom;
+    view.panY = fy - 0.5 - (baseFrac(vAtCursor) - 0.5) * view.zoom;
+    drawStage();
+  }, { passive: false });
+  cv.addEventListener('pointerdown', (e) => {
+    // Middle (scroll) click → pan the canvas around (left-click stays for select/add).
+    if (e.button === 1) {
+      e.preventDefault(); cv.setPointerCapture(e.pointerId);
+      const r = cv.getBoundingClientRect();
+      SE.pan = { sx: e.clientX, sy: e.clientY, px: view.panX, py: view.panY, w: r.width, h: r.height };
+      return;
     }
-    for (const a of SE.scene.anchors) {
-      if (seDist(p, floorToScreen(f, a.u, a.v)) < 0.05) { selectAnchor(a.id); SE.drag = { type: 'anchor', id: a.id }; return; }
+    if (e.button !== 0) return;   // only left button selects / adds
+    cv.setPointerCapture(e.pointerId);
+    const p = seStageXY(e), f = SE.scene.floor, t = SE.tool;
+
+    // Grab a draggable handle first — works in Select mode for every layer, or within a
+    // layer's own tool. This is how you MOVE things; placing new items only happens on an
+    // empty click in that item's Add tool (so Select mode never drops things by accident).
+    const g = grabHandle(p, f, t);
+    if (g) { SE.drag = g; applyHandleSelection(g); return; }
+
+    // ── Empty click, per tool ──
+    if (t === 'select') {
+      // Pick a wall body or zone area; empty space clears the selection. Never places.
+      const wid = wallBodyHit(p, f); if (wid) { selectWall(wid); return; }
+      const zid = zoneAreaHit(p, f); if (zid) { selectZone(zid); return; }
+      SE.sel = null; SE.selKind = null; clearSelUI(); drawStage();
+      return;
     }
+    if (t === 'floor') return;   // floor only drags corners (handled by grabHandle)
     const uv = screenToFloor(f, p.x, p.y);
-    const a = newAnchor(uv.u, uv.v);
-    SE.scene.anchors.push(a); selectAnchor(a.id); SE.drag = null;
+    if (t === 'anchor') { const a = newAnchor(uv.u, uv.v); SE.scene.anchors.push(a); selectAnchor(a.id); drawStage(); return; }
+    if (t === 'prop')   { const it = newForeground(uv.u, uv.v); SE.scene.foregrounds.push(it); selectFg(it.id); refreshFgUI(); drawStage(); return; }
+    if (t === 'light')  {
+      const sh = ensureShadow(); if (sh.lights.length >= 6) { setStatus('Up to 6 lights'); return; }
+      sh.lights.push({ ...DEF_LIGHT(), u: clampUnit(uv.u), v: clampUnit(uv.v) });
+      renderShadowLights(); drawStage(); return;
+    }
+    if (t === 'door')   { const dr = newDoor(uv.u, uv.v); SE.scene.doors = SE.scene.doors || []; SE.scene.doors.push(dr); selectDoor(dr.id); refreshDoorUI(); drawStage(); return; }
+    // No-walk zone: click to add polygon points; click the first point (≥3 pts) to close.
+    if (t === 'zone') {
+      if (!SE.zoneDraft) SE.zoneDraft = [];
+      if (SE.zoneDraft.length >= 3 && seDist(p, floorToScreen(f, SE.zoneDraft[0].x, SE.zoneDraft[0].y)) < 0.04) { commitZoneDraft(); refreshZoneUI(); drawStage(); return; }
+      SE.zoneDraft.push({ x: uv.u, y: uv.v }); if ($('se-zone-finish')) $('se-zone-finish').style.display = ''; drawStage(); return;
+    }
+    // Wall: first click sets one base end, second click drops the wall.
+    if (t === 'wall') {
+      if (!SE.wallDraft) { SE.wallDraft = { x: uv.u, y: uv.v }; drawStage(); return; }
+      SE.scene.walls = SE.scene.walls || [];
+      const w = { id: seRnd('w'), base: [{ x: SE.wallDraft.x, y: SE.wallDraft.y }, { x: uv.u, y: uv.v }], height: 0.45 };
+      SE.scene.walls.push(w); SE.wallDraft = null;
+      selectWall(w.id); refreshWallUI();
+      setStatus('Wall added — drag ◆ ends / ▲ height, or Select it to set height & delete'); drawStage(); return;
+    }
   });
   cv.addEventListener('pointermove', (e) => {
+    if (SE.pan) {   // middle-drag pan
+      view.panX = SE.pan.px + (e.clientX - SE.pan.sx) / SE.pan.w;
+      view.panY = SE.pan.py + (e.clientY - SE.pan.sy) / SE.pan.h;
+      drawStage(); return;
+    }
     if (!SE.drag) return;
     const p = seStageXY(e), f = SE.scene.floor;
     if (SE.drag.type === 'corner') f[SE.drag.key] = { x: p.x, y: p.y };
-    else if (SE.drag.type === 'light') { const L = SE.scene.shadow?.lights?.[SE.drag.idx]; if (L) { const poleImg = (L.height || 0) * depthScaleAt(f, L.v) * 0.5 * (1 + 2 * STAGE_PAD); const uv = screenToFloor(f, p.x, p.y + poleImg); L.u = clampUnit(uv.u); L.v = clampUnit(uv.v); } }
+    else if (SE.drag.type === 'zonept') { const z = SE.scene.zones?.[SE.drag.zi]; if (z && z.points[SE.drag.pi]) { const uv = screenToFloor(f, p.x, p.y); z.points[SE.drag.pi] = { x: uv.u, y: uv.v }; } }
+    else if (SE.drag.type === 'wallpt') { const w = SE.scene.walls?.[SE.drag.wi]; if (w) { const uv = screenToFloor(f, p.x, p.y); w.base[SE.drag.pi] = { x: uv.u, y: uv.v }; } }
+    else if (SE.drag.type === 'wallh') { const w = SE.scene.walls?.[SE.drag.wi]; if (w) { const mid = { x: (w.base[0].x + w.base[1].x) / 2, y: (w.base[0].y + w.base[1].y) / 2 }; const midS = floorToScreen(f, mid.x, mid.y); w.height = Math.max(0.05, Math.min(10, (midS.y - p.y) / (depthScaleAt(f, mid.y) * 0.45))); if (SE.selKind === 'wall' && SE.sel === w.id) refreshWallUI(); } }
+    else if (SE.drag.type === 'light') { const L = SE.scene.shadow?.lights?.[SE.drag.idx]; if (L) { const uv = screenToFloor(f, p.x, p.y); L.u = clampUnit(uv.u + (SE.drag.du || 0)); L.v = clampUnit(uv.v + (SE.drag.dv || 0)); } }
     else if (SE.drag.type === 'anchor') { const a = findAnchor(SE.drag.id); if (a) { const uv = screenToFloor(f, p.x, p.y); a.u = uv.u; a.v = uv.v; } }
     else if (SE.drag.type === 'fg') { const it = findFg(SE.drag.id); if (it) { const uv = screenToFloor(f, p.x, p.y); it.u = uv.u; it.v = uv.v; } }
+    else if (SE.drag.type === 'door') { const dr = findDoor(SE.drag.id); if (dr) { const uv = screenToFloor(f, p.x, p.y); dr.u = uv.u; dr.v = uv.v; } }
     drawStage();
   });
-  cv.addEventListener('pointerup', () => { SE.drag = null; });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') sceneStageSetFs(false); });
+  cv.addEventListener('pointerup', () => { SE.drag = null; SE.pan = null; });
+  // Don't let middle-click open the browser autoscroll puck.
+  cv.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { sceneStageSetFs(false); return; }
+    // 'x' (or Delete) removes the selected item — ignored while typing in a field.
+    if (e.key === 'x' || e.key === 'X' || e.key === 'Delete') {
+      const ae = document.activeElement;
+      if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+      const editing = $('scene-stage-wrap')?.classList.contains('fs') || $('tab-scene')?.style.display !== 'none';
+      if (editing && sceneDeleteSelected()) e.preventDefault();
+    }
+  });
 }
 
 // Fullscreen editing: blow the stage up to fill the window for precise corner/anchor
 // work, and bump the canvas backing resolution so it stays crisp. Hit-testing is in
 // normalized floor space, so it works identically at any display size.
 const STAGE_RES = { normal: [560, 315], full: [1280, 720] };
+const FS_INSPECTOR_W = 356;   // left inspector width reserved from the stage in fullscreen
+function fsStageW() { return Math.max(700, Math.min(2400, Math.round(window.innerWidth - 60 - FS_INSPECTOR_W))); }
+function fsStageH() { return Math.max(480, Math.min(1300, Math.round(window.innerHeight - 110))); }
+let _fsMovedSections = null;
 function sceneStageSetFs(on) {
   const wrap = $('scene-stage-wrap'), cv = $('scene-stage'); if (!wrap || !cv) return;
   if (wrap.classList.contains('fs') === on) return;
   wrap.classList.toggle('fs', on);
-  const [w, h] = on ? STAGE_RES.full : STAGE_RES.normal;
-  cv.width = w; cv.height = h;
+  // Move every editor section (all but the Scene Builder / stage section) into the
+  // fullscreen left inspector and back, so item settings + add/delete are reachable in
+  // fullscreen. The nodes keep their ids and handlers, so all existing logic still works.
+  const insp = $('se-fs-inspector'), tab = $('tab-scene');
+  if (insp && tab) {
+    if (on) {
+      _fsMovedSections = Array.from(tab.children).filter(el => el.classList.contains('section') && !el.contains(wrap));
+      _fsMovedSections.forEach(el => insp.appendChild(el));
+      insp.classList.add('on');
+    } else {
+      if (_fsMovedSections) { _fsMovedSections.forEach(el => tab.appendChild(el)); _fsMovedSections = null; }
+      insp.classList.remove('on');
+    }
+  }
+  if (on) {   // size the canvas to the window (minus the inspector) so it's big & crisp
+    cv.width = fsStageW(); cv.height = fsStageH();
+  } else { cv.width = STAGE_RES.normal[0]; cv.height = STAGE_RES.normal[1]; }
   drawStage();
 }
+// Keep the fullscreen stage matched to the window as it resizes/maximizes.
+window.addEventListener('resize', () => {
+  const wrap = $('scene-stage-wrap'), cv = $('scene-stage');
+  if (wrap && wrap.classList.contains('fs') && cv) {
+    cv.width = fsStageW(); cv.height = fsStageH();
+    drawStage();
+  }
+});
 window.sceneStageToggleFs = () => sceneStageSetFs(!$('scene-stage-wrap')?.classList.contains('fs'));
 
-function selectAnchor(id) { SE.sel = id; SE.selKind = 'anchor'; refreshAnchorUI(); refreshFgUI(); drawStage(); }
-function selectFg(id) { SE.sel = id; SE.selKind = 'fg'; refreshFgUI(); refreshAnchorUI(); drawStage(); }
+// In fullscreen, bring the just-shown settings card into view in the left inspector.
+function seScrollEditIntoView(id) {
+  const insp = $('se-fs-inspector');
+  if (!insp || !insp.classList.contains('on')) return;
+  const el = $(id);
+  if (el && el.style.display !== 'none') el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function clearSelUI() { refreshAnchorUI(); refreshFgUI(); refreshWallUI(); refreshZoneUI(); refreshDoorUI(); }
+function selectAnchor(id) { SE.sel = id; SE.selKind = 'anchor'; clearSelUI(); drawStage(); seScrollEditIntoView('scene-anchor-edit'); }
+function selectFg(id) { SE.sel = id; SE.selKind = 'fg'; clearSelUI(); drawStage(); seScrollEditIntoView('scene-fg-edit'); }
+function selectWall(id) { SE.sel = id; SE.selKind = 'wall'; clearSelUI(); drawStage(); seScrollEditIntoView('scene-wall-edit'); }
+function selectZone(id) { SE.sel = id; SE.selKind = 'zone'; clearSelUI(); drawStage(); seScrollEditIntoView('scene-zone-edit'); }
+const findWall = (id) => (SE.scene.walls || []).find(w => w.id === id);
+const findZone = (id) => (SE.scene.zones || []).find(z => z.id === id);
+
+// ── Walls UI ──
+function refreshWallUI() {
+  const list = $('scene-wall-list'); if (!list) return;
+  list.innerHTML = '';
+  const ws = SE.scene.walls || [];
+  if (!ws.length) list.textContent = 'No walls yet — use the ▥ Wall tool.';
+  else ws.forEach((w, i) => list.appendChild(chip('Wall ' + (i + 1), '#cbd5e1', 'h ' + (+w.height).toFixed(2),
+    w.id === SE.sel && SE.selKind === 'wall', () => selectWall(w.id))));
+  const ed = $('scene-wall-edit'); if (!ed) return;
+  const w = (SE.selKind === 'wall') ? findWall(SE.sel) : null;
+  if (!w) { ed.style.display = 'none'; return; }
+  ed.style.display = 'block';
+  $('wall-height').value = w.height; $('wall-height-lbl').textContent = (+w.height).toFixed(2);
+}
+window.sceneWallEdit = (field, value) => {
+  const w = findWall(SE.sel); if (!w) return;
+  if (field === 'height') { w.height = Math.max(0.05, Math.min(10, parseFloat(value) || 0.45)); const l = $('wall-height-lbl'); if (l) l.textContent = (+w.height).toFixed(2); }
+  drawStage();
+};
+window.sceneWallDelete = () => {
+  const i = (SE.scene.walls || []).findIndex(w => w.id === SE.sel); if (i < 0) return;
+  SE.scene.walls.splice(i, 1); SE.sel = null; SE.selKind = null; refreshWallUI(); drawStage(); setStatus('Wall deleted');
+};
+
+// ── No-walk zones UI ──
+function refreshZoneUI() {
+  const list = $('scene-zone-list'); if (!list) return;
+  list.innerHTML = '';
+  const zs = SE.scene.zones || [];
+  if (!zs.length) list.textContent = 'No no-walk zones yet — use the ⬣ No-walk tool.';
+  else zs.forEach((z, i) => list.appendChild(chip('Zone ' + (i + 1), '#ef4444', z.points.length + ' pts',
+    z.id === SE.sel && SE.selKind === 'zone', () => selectZone(z.id))));
+  const ed = $('scene-zone-edit'); if (!ed) return;
+  ed.style.display = ((SE.selKind === 'zone') && findZone(SE.sel)) ? 'block' : 'none';
+}
+window.sceneZoneDelete = () => {
+  const i = (SE.scene.zones || []).findIndex(z => z.id === SE.sel); if (i < 0) return;
+  SE.scene.zones.splice(i, 1); SE.sel = null; SE.selKind = null; refreshZoneUI(); drawStage(); setStatus('No-walk zone deleted');
+};
+
+// ── Doors UI (character entry / cross-screen passage) ──
+function selectDoor(id) { SE.sel = id; SE.selKind = 'door'; clearSelUI(); drawStage(); seScrollEditIntoView('scene-door-edit'); }
+function refreshDoorUI() {
+  const list = $('scene-door-list'); if (!list) return;
+  list.innerHTML = '';
+  const ds = SE.scene.doors || [];
+  if (!ds.length) list.textContent = 'No door yet — use the 🚪 Door tool to set where the character enters.';
+  else ds.forEach((d, i) => list.appendChild(chip('Door ' + (i + 1), '#34d399', 'entry',
+    d.id === SE.sel && SE.selKind === 'door', () => selectDoor(d.id))));
+  const ed = $('scene-door-edit'); if (!ed) return;
+  ed.style.display = ((SE.selKind === 'door') && findDoor(SE.sel)) ? 'block' : 'none';
+}
+window.sceneDoorDelete = () => {
+  const i = (SE.scene.doors || []).findIndex(d => d.id === SE.sel); if (i < 0) return;
+  SE.scene.doors.splice(i, 1); SE.sel = null; SE.selKind = null; refreshDoorUI(); drawStage(); setStatus('Door deleted');
+};
 
 // Animation dropdown: every imported clip (covers "all animations / states").
 function seAnimOptions(sel, current) {
@@ -1413,13 +2077,75 @@ window.sceneEditorPickImage = async (field) => {
   img.src = res.dataUrl;
 };
 
+// ── Multi-display rooms (editor) ──────────────────────────────────────────────
+// The editor always edits the TOP-LEVEL scene fields (floor/anchors/foregrounds/background/
+// shadow) — those are the ACTIVE room. SE.rooms[] holds the other rooms; switching rooms
+// swaps the data (and bg/fg images) in and out. No change to the rest of the editor.
+function seBlankRoom() {
+  return { background: null, _bgData: undefined,
+    floor: { farLeft:{x:0.28,y:0.50}, farRight:{x:0.72,y:0.50}, nearLeft:{x:0.06,y:0.95}, nearRight:{x:0.94,y:0.95} },
+    anchors: [], foregrounds: [], shadow: loadEditorShadow(), zones: [], walls: [], doors: [], _bgImg: null, _fgImgs: {} };
+}
+function seSnapshotRoom() {
+  return { background: SE.scene.background, _bgData: SE.scene._bgData, floor: SE.scene.floor,
+    anchors: SE.scene.anchors, foregrounds: SE.scene.foregrounds, shadow: SE.scene.shadow, zones: SE.scene.zones, walls: SE.scene.walls, doors: SE.scene.doors,
+    _bgImg: SE.bgImg, _fgImgs: SE.fgImgs };
+}
+function seApplyRoom(room) {
+  SE.scene.background = room.background || null; SE.scene._bgData = room._bgData;
+  SE.scene.floor = room.floor; SE.scene.anchors = room.anchors || []; SE.scene.foregrounds = room.foregrounds || [];
+  SE.scene.shadow = room.shadow || loadEditorShadow(); SE.scene.zones = room.zones || []; SE.scene.walls = room.walls || []; SE.scene.doors = room.doors || [];
+  SE.bgImg = room._bgImg || null; SE.fgImgs = room._fgImgs || {};
+  SE.sel = null; SE.selKind = null; SE.zoneDraft = null;
+  renderShadowLights(); refreshAnchorUI(); refreshFgUI(); refreshWallUI(); refreshZoneUI(); refreshDoorUI(); drawStage();
+}
+function renderRoomTabs() {
+  const n = SE.scene.displays || 1;
+  if ($('scene-displays')) $('scene-displays').value = String(n);
+  if ($('scene-room-row')) $('scene-room-row').style.display = n > 1 ? 'block' : 'none';
+  if ($('scene-room-lbl')) $('scene-room-lbl').textContent = (SE.activeRoom + 1);
+  if ($('scene-room-total')) $('scene-room-total').textContent = n;
+  if (n > 1 && $('scene-room-tabs')) {
+    $('scene-room-tabs').innerHTML = Array.from({ length: n }, (_, i) =>
+      `<button class="btn ${i === SE.activeRoom ? 'btn-primary' : 'btn-sm-sec'}" style="padding:5px 12px" onclick="selectSceneRoom(${i})">Screen ${i + 1}</button>`).join('');
+  }
+  // In-canvas switcher (lives in the stage toolbar, so it works in fullscreen too).
+  const sw = $('scene-room-switch');
+  if (sw) {
+    if (n > 1) {
+      sw.style.display = 'flex';
+      sw.innerHTML = Array.from({ length: n }, (_, i) =>
+        `<button type="button" class="se-tool${i === SE.activeRoom ? ' active' : ''}" onclick="selectSceneRoom(${i})" title="Edit screen ${i + 1}">🖥 ${i + 1}</button>`).join('');
+    } else { sw.style.display = 'none'; sw.innerHTML = ''; }
+  }
+}
+window.setSceneDisplays = (nStr) => {
+  const n = Math.max(1, Math.min(3, parseInt(nStr, 10) || 1));
+  if (!SE.rooms) SE.rooms = [seSnapshotRoom()]; else SE.rooms[SE.activeRoom] = seSnapshotRoom();
+  while (SE.rooms.length < n) SE.rooms.push(seBlankRoom());
+  if (SE.rooms.length > n) SE.rooms.length = n;
+  SE.scene.displays = n;
+  if (SE.activeRoom >= n) SE.activeRoom = n - 1;
+  renderRoomTabs();
+  seApplyRoom(SE.rooms[SE.activeRoom]);
+  setStatus(n > 1 ? `${n}-screen scene — edit each screen's image, perspective & anchors` : 'Single-screen scene');
+};
+window.selectSceneRoom = (i) => {
+  if (i === SE.activeRoom || !SE.rooms) return;
+  SE.rooms[SE.activeRoom] = seSnapshotRoom();
+  SE.activeRoom = i;
+  renderRoomTabs();
+  seApplyRoom(SE.rooms[i]);
+};
+
 window.sceneEditorNew = () => {
   SE.scene = defaultEditorScene(); SE.bgImg = null; SE.fgImgs = {}; SE.sel = null; SE.selKind = null;
+  SE.scene.displays = 1; SE.activeRoom = 0; SE.rooms = [seSnapshotRoom()];
   $('scene-name').value = SE.scene.name;
   $('wander-speed').value = SE.scene.wander.walkSpeed; $('wander-speed-lbl').textContent = SE.scene.wander.walkSpeed;
   $('wander-min').value = SE.scene.wander.idleMin; $('wander-max').value = SE.scene.wander.idleMax;
   renderShadowLights();
-  refreshAnchorUI(); refreshFgUI(); populateSceneCharSelect(); drawStage();
+  refreshAnchorUI(); refreshFgUI(); refreshWallUI(); refreshZoneUI(); refreshDoorUI(); populateSceneCharSelect(); renderRoomTabs(); drawStage();
 };
 
 async function seLoadImage(filename) {
@@ -1453,14 +2179,45 @@ window.sceneEditorLoadSelected = async () => {
   const w = SE.scene.wander || {};
   $('wander-speed').value = w.walkSpeed ?? 0.16; $('wander-speed-lbl').textContent = w.walkSpeed ?? 0.16;
   $('wander-min').value = w.idleMin ?? 3; $('wander-max').value = w.idleMax ?? 7;
+  // Rooms: room 0 = the top-level we just loaded; rooms 1+ come from m.rooms.
+  SE.activeRoom = 0;
+  const nDisp = Math.max(1, m.displays || (Array.isArray(m.rooms) ? m.rooms.length : 1));
+  SE.scene.displays = nDisp;
+  SE.rooms = [seSnapshotRoom()];
+  if (nDisp > 1 && Array.isArray(m.rooms)) {
+    for (let i = 1; i < nDisp; i++) {
+      const rm = m.rooms[i] || {};
+      const room = seBlankRoom();
+      room.background = rm.background || null;
+      room.floor = rm.floor || room.floor;
+      room.anchors = (rm.anchors || []).map(a => ({ ...newAnchor(a.u ?? 0.5, a.v ?? 0.5), ...a, offset: a.offset || { x: 0, y: 0 } }));
+      room.foregrounds = (Array.isArray(rm.foregrounds) ? rm.foregrounds : []).map(f => ({ ...newForeground(f.u ?? 0.5, f.v ?? 0.9), ...f, anchor: { enabled: false, animation: null, facing: 'auto', offset: { x: 0, y: 0 }, repeatMinutes: 0, dwell: 0, ...(f.anchor || {}) } }));
+      room.shadow = loadEditorShadow(rm.shadow);
+      room.zones = Array.isArray(rm.zones) ? rm.zones : [];
+      room.walls = Array.isArray(rm.walls) ? rm.walls : [];
+      room.doors = Array.isArray(rm.doors) ? rm.doors : [];
+      room._bgImg = rm.background ? await seLoadImage(rm.background) : null;
+      room._fgImgs = {};
+      for (const it of room.foregrounds) if (it.image) { const img = await seLoadImage(it.image); if (img) room._fgImgs[it.id] = img; }
+      SE.rooms.push(room);
+    }
+  }
+  renderRoomTabs();
   renderShadowLights();
-  refreshAnchorUI(); refreshFgUI(); populateSceneCharSelect(); drawStage();
+  refreshAnchorUI(); refreshFgUI(); refreshWallUI(); refreshZoneUI(); refreshDoorUI(); populateSceneCharSelect(); drawStage();
 };
 
 window.sceneEditorSave = async () => {
   if (!SE.scene) return;
   SE.scene.name = $('scene-name').value.trim() || 'Scene';
   SE.scene.wander = { enabled: true, walkSpeed: parseFloat($('wander-speed').value), idleMin: parseFloat($('wander-min').value), idleMax: parseFloat($('wander-max').value) };
+  // Assemble rooms[] from the active room + the stored rooms; mirror room 0 to the top-level.
+  if (!SE.rooms) SE.rooms = [seSnapshotRoom()]; else SE.rooms[SE.activeRoom] = seSnapshotRoom();
+  SE.scene.displays = SE.rooms.length;
+  SE.scene.rooms = SE.rooms.map(r => ({ background: r.background || null, _bgData: r._bgData, floor: r.floor, anchors: r.anchors, foregrounds: r.foregrounds, shadow: r.shadow, zones: r.zones || [], walls: r.walls || [], doors: r.doors || [] }));
+  const r0 = SE.scene.rooms[0];
+  SE.scene.background = r0.background; SE.scene._bgData = r0._bgData; SE.scene.floor = r0.floor;
+  SE.scene.anchors = r0.anchors; SE.scene.foregrounds = r0.foregrounds; SE.scene.shadow = r0.shadow; SE.scene.zones = r0.zones; SE.scene.walls = r0.walls; SE.scene.doors = r0.doors;
   try {
     const res = await window.deskbuddy.saveScene({ name: SE.scene.name, scenepack: SE.scene });
     if (res?.scenepack) {   // images now written to disk; refresh local model with filenames
@@ -1493,11 +2250,13 @@ function sceneEditorOnShow() {
   seInitStage();
   if (!SE.scene) sceneEditorNew();
   populateSceneList();
-  refreshAnchorUI(); refreshFgUI();
+  refreshAnchorUI(); refreshFgUI(); refreshWallUI(); refreshZoneUI(); refreshDoorUI();
   drawStage();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
   await loadCharList();
+  refreshAnimLibrary();
+  attachPrecisionInputs();
 })();

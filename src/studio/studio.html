@@ -87,6 +87,15 @@
     .clip-play{background:none;border:none;color:var(--accent);cursor:pointer;font-size:14px;flex-shrink:0;padding:0 2px;}
     .clip-del{background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;flex-shrink:0;opacity:.5;}
     .clip-del:hover{opacity:1;}
+    .lib-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(255,255,255,.04);border-radius:7px;border:1px solid var(--border);margin-bottom:5px;}
+    .lib-name{font-size:12px;font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .lib-ext{font-size:9px;text-transform:uppercase;padding:1px 6px;border-radius:8px;background:rgba(139,92,246,.18);color:#c4b5fd;flex-shrink:0;}
+    .lib-add{background:var(--accent);border:none;color:#fff;cursor:pointer;font-size:11px;padding:3px 9px;border-radius:6px;flex-shrink:0;}
+    .lib-add:hover{background:var(--accent2);}
+    .lib-del{background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;flex-shrink:0;opacity:.5;}
+    .lib-del:hover{opacity:1;}
+    .clip-move{background:rgba(99,102,241,.15);border:1px solid var(--border);color:var(--accent);cursor:pointer;font-size:11px;flex-shrink:0;padding:2px 7px;border-radius:6px;}
+    .clip-move.on{background:rgba(74,222,128,.18);border-color:rgba(74,222,128,.5);color:#4ade80;}
 
     /* State rows */
     .state-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
@@ -138,12 +147,26 @@
     .layer-row.behind{border-left:3px solid #f59e0b;}
     .scene-stage{width:100%;border:1px solid var(--border);border-radius:8px;background:#0d0d12;cursor:crosshair;touch-action:none;display:block;}
     #scene-stage-wrap{position:relative;}
-    .stage-fs-btn{position:absolute;top:7px;right:7px;z-index:2;opacity:.9;}
-    .stage-fs-btn:hover{opacity:1;}
-    /* Fullscreen editing: the stage takes over the whole window. */
-    #scene-stage-wrap.fs{position:fixed;inset:0;z-index:1000;background:rgba(7,7,13,.97);display:flex;align-items:center;justify-content:center;padding:40px;}
-    #scene-stage-wrap.fs .scene-stage{width:auto;height:auto;max-width:100%;max-height:100%;border-radius:10px;}
-    #scene-stage-wrap.fs .stage-fs-btn{top:18px;right:22px;font-size:13px;padding:7px 13px;}
+    /* Edit toolbar */
+    .se-tool{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--muted);cursor:pointer;}
+    .se-tool:hover{background:rgba(255,255,255,.1);color:var(--text);}
+    .se-tool.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+    .se-eye{font-size:12px;width:26px;padding:4px 0;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);cursor:pointer;}
+    .se-eye.off{opacity:.32;text-decoration:line-through;}
+    /* Fullscreen editing: the stage takes over the whole window. The toolbar moves with it. */
+    #scene-stage-wrap.fs{position:fixed;inset:0;z-index:1000;background:rgba(7,7,13,.97);display:flex;flex-direction:column;align-items:stretch;justify-content:center;padding:14px 24px 24px;}
+    #scene-stage-wrap.fs .scene-stage{width:100%;height:auto;flex:1;min-height:0;max-height:calc(100vh - 90px);object-fit:contain;border-radius:10px;}
+    #scene-stage-wrap.fs #scene-toolbar{font-size:13px;}
+    #scene-stage-wrap.fs .se-tool{font-size:13px;padding:6px 12px;}
+    #scene-stage-wrap.fs .se-eye{font-size:14px;width:32px;padding:6px 0;}
+    /* Fullscreen left inspector: holds the selected item's settings + add/delete controls
+       so the whole scene is editable without leaving fullscreen. Sections are moved in/out
+       by JS (sceneStageSetFs); they keep all their existing ids and handlers. */
+    #scene-stage-wrap.fs{padding-left:356px;}
+    #se-fs-inspector{display:none;}
+    #se-fs-inspector.on{display:block;position:fixed;left:0;top:0;bottom:0;width:332px;z-index:1001;
+      overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);padding:14px 14px 28px;}
+    #se-fs-inspector.on .section{margin:0 0 14px;}
     .sec-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px;}
     .sec-head h3{margin:0;}
     .chip-list{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);}
@@ -275,9 +298,51 @@
         </div>
 
         <div class="section">
-          <h3>Animations (<span id="anim-count">0</span>)</h3>
+          <h3>Animation Library</h3>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">
+            Every animation you import is saved here for <b style="color:var(--text)">every</b> character.
+            Click <b style="color:var(--text)">+ Add</b> to retarget one onto the character you have loaded.</p>
+          <div id="anim-library">
+            <div style="font-size:11px;color:var(--muted)">No saved animations yet. Import one above — it'll be saved here.</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Animations on this character (<span id="anim-count">0</span>)</h3>
           <div id="anim-list">
             <div style="font-size:11px;color:var(--muted)">No animations yet. Import model clips or FBX from Mixamo.</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Adjust Animation</h3>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">
+            Pick a clip and fine-tune it. <b style="color:var(--text)">Pin to floor</b> stops floor moves
+            (breakdance etc.) from floating/bouncing; <b style="color:var(--text)">Offset</b> nudges it in
+            place; <b style="color:var(--text)">Speed</b> changes playback rate.</p>
+          <select id="adj-clip" onchange="adjSelect()"
+            style="width:100%;padding:8px 10px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;margin-bottom:10px">
+            <option value="">— select an animation —</option>
+          </select>
+          <div id="adj-controls" style="display:none">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Speed <span id="adj-speed-lbl" style="color:var(--text)">1.00×</span></div>
+            <input type="range" id="adj-speed" min="0.1" max="3" step="0.05" value="1" oninput="adjChange()" style="width:100%;accent-color:var(--accent);margin-bottom:8px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Offset (× character height)</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <label style="flex:1;font-size:11px;color:var(--muted)">X <span id="adj-ox-lbl" style="color:var(--text)">0.00</span>
+                <input type="range" id="adj-ox" min="-1" max="1" step="0.01" value="0" oninput="adjChange()" style="width:100%;accent-color:var(--accent)"></label>
+              <label style="flex:1;font-size:11px;color:var(--muted)">Y <span id="adj-oy-lbl" style="color:var(--text)">0.00</span>
+                <input type="range" id="adj-oy" min="-1" max="1" step="0.01" value="0" oninput="adjChange()" style="width:100%;accent-color:var(--accent)"></label>
+              <label style="flex:1;font-size:11px;color:var(--muted)">Z <span id="adj-oz-lbl" style="color:var(--text)">0.00</span>
+                <input type="range" id="adj-oz" min="-1" max="1" step="0.01" value="0" oninput="adjChange()" style="width:100%;accent-color:var(--accent)"></label>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:4px">
+              <input type="checkbox" id="adj-pin" onchange="adjChange()" style="width:15px;height:15px;accent-color:var(--accent)">
+              Pin to floor (grounds floor moves — no floating/bouncing)</label>
+          </div>
+          <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Walk speed (scene) <span id="adj-walk-lbl" style="color:var(--text)">0.16</span></div>
+            <input type="range" id="adj-walk" min="0.04" max="0.5" step="0.01" value="0.16" oninput="adjWalkChange()" style="width:100%;accent-color:var(--accent)">
           </div>
         </div>
       </div>
@@ -336,6 +401,22 @@
           </div>
           <div class="field"><label>Name</label><input type="text" id="scene-name" placeholder="My Scene"></div>
 
+          <!-- Multi-display: each room is one screen with its own image + perspective -->
+          <div class="field">
+            <label>Displays (screens) — the character walks across them</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="scene-displays" onchange="setSceneDisplays(this.value)" style="flex:1">
+                <option value="1">1 display</option>
+                <option value="2">2 displays</option>
+                <option value="3">3 displays</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" id="scene-room-row" style="display:none">
+            <label>Editing room <b id="scene-room-lbl">1</b> of <b id="scene-room-total">1</b> (left → right)</label>
+            <div id="scene-room-tabs" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+          </div>
+
           <!-- Character bound to this scene + its size -->
           <div class="field">
             <label>Character in this scene</label>
@@ -343,21 +424,48 @@
           </div>
           <div class="field">
             <label>Size of the chosen character in this scene: <b id="charsize-lbl">1.00</b></label>
-            <input type="range" id="charsize-slider" min="0.3" max="2.5" step="0.05" value="1" oninput="sceneCharSizeEdit(this.value)">
+            <input type="range" id="charsize-slider" min="0.1" max="8" step="0.05" value="1" oninput="sceneCharSizeEdit(this.value)">
           </div>
 
           <!-- Editing stage: bg + floor quad + foreground items + anchors -->
           <div id="scene-stage-wrap">
-            <button type="button" class="btn btn-secondary btn-sm stage-fs-btn" onclick="sceneStageToggleFs()" title="Fullscreen editor (Esc to exit)">⛶ Fullscreen</button>
+            <!-- Edit toolbar: pick what to place/move, toggle layer visibility, zoom, fullscreen -->
+            <div id="scene-toolbar" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:6px">
+              <button type="button" class="se-tool active" data-tool="select" onclick="seSetTool('select')">✥ Select</button>
+              <button type="button" class="se-tool" data-tool="floor" onclick="seSetTool('floor')">▱ Floor</button>
+              <button type="button" class="se-tool" data-tool="anchor" onclick="seSetTool('anchor')">● Anchor</button>
+              <button type="button" class="se-tool" data-tool="prop" onclick="seSetTool('prop')">▭ Prop</button>
+              <button type="button" class="se-tool" data-tool="light" onclick="seSetTool('light')">☀ Light</button>
+              <button type="button" class="se-tool" data-tool="zone" onclick="seSetTool('zone')">⬣ No-walk</button>
+              <button type="button" class="se-tool" data-tool="wall" onclick="seSetTool('wall')">▥ Wall</button>
+              <button type="button" class="se-tool" data-tool="door" onclick="seSetTool('door')">🚪 Door</button>
+              <span id="se-zone-finish" style="display:none"><button type="button" class="se-tool" style="color:#4ade80;border-color:#4ade80" onclick="seFinishZone()">✓ Finish zone</button></span>
+              <span id="scene-room-switch" style="display:none;gap:4px;margin-left:6px"></span>
+              <span style="flex:1"></span>
+              <button type="button" class="se-eye" data-eye="floor" onclick="seToggleEye('floor')" title="Show/hide floor">▱</button>
+              <button type="button" class="se-eye" data-eye="anchors" onclick="seToggleEye('anchors')" title="Show/hide anchors">●</button>
+              <button type="button" class="se-eye" data-eye="props" onclick="seToggleEye('props')" title="Show/hide props">▭</button>
+              <button type="button" class="se-eye" data-eye="lights" onclick="seToggleEye('lights')" title="Show/hide lights">☀</button>
+              <button type="button" class="se-eye" data-eye="zones" onclick="seToggleEye('zones')" title="Show/hide no-walk zones">⬣</button>
+              <button type="button" class="se-eye" data-eye="walls" onclick="seToggleEye('walls')" title="Show/hide walls">▥</button>
+              <button type="button" class="se-eye" data-eye="doors" onclick="seToggleEye('doors')" title="Show/hide doors">🚪</button>
+              <button type="button" class="se-tool" onclick="seResetView()" title="Reset zoom">⤢</button>
+              <button type="button" class="se-tool stage-fs-btn" onclick="sceneStageToggleFs()" title="Fullscreen editor (Esc to exit)">⛶ Fullscreen</button>
+            </div>
             <canvas id="scene-stage" width="560" height="315" class="scene-stage"></canvas>
           </div>
           <p class="rig-note" id="scene-hint" style="margin:6px 0 0">
-            Drag floor corners ◻ (can go past the dashed image edge), anchors ●, props ▭, or lights ☀ · click empty floor to add an anchor</p>
+            Scroll to zoom in/out · drag floor corners ◻ (can go far past the image when zoomed out), anchors ●, props ▭, or lights ☀ · click empty floor to add an anchor</p>
 
           <div class="row-inline" style="margin-top:8px">
             <button class="btn btn-secondary btn-sm btn-full" onclick="sceneEditorPickImage('background')">🖼 Set Background → Wallpaper</button>
           </div>
         </div>
+
+        <!-- Fullscreen-editor left inspector: the editor sections below get moved in here
+             while the stage is fullscreen, so selecting an item shows its settings and
+             add/delete stay reachable without leaving fullscreen (see sceneStageSetFs). -->
+        <div id="se-fs-inspector"></div>
 
         <!-- Foreground props (multiple, floor-placed, can be anchors) -->
         <div class="section">
@@ -376,7 +484,7 @@
               <button class="btn btn-secondary btn-sm" onclick="sceneFgDelete()">🗑</button>
             </div>
             <div class="field" style="margin-top:8px"><label>Size: <span id="fg-scale-lbl">1.0</span>×</label>
-              <input type="range" id="fg-scale" min="0.2" max="3" step="0.05" value="1" oninput="sceneFgEdit('scale',this.value)"></div>
+              <input type="range" id="fg-scale" min="0.05" max="8" step="0.05" value="1" oninput="sceneFgEdit('scale',this.value)"></div>
             <label class="check"><input type="checkbox" id="fg-fullscreen" onchange="sceneFgEdit('fullscreen',this.checked)">
               Full-screen occluder (covers the whole window)</label>
 
@@ -445,6 +553,44 @@
               <button class="btn btn-accent btn-sm" onclick="sceneAnchorPreview()" style="flex:1">▶ Preview clip</button>
               <button class="btn btn-secondary btn-sm" onclick="sceneAnchorDelete()">🗑 Delete</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Walls -->
+        <div class="section">
+          <h3>Walls</h3>
+          <p class="hint">Vertical surfaces the character walks around and that catch its shadow.
+            Use the <b>▥ Wall</b> tool to place one (click two floor points); switch to <b>✥ Select</b>
+            to pick a wall, set its height, or delete it. Drag ◆ ends / ▲ to reshape.</p>
+          <div id="scene-wall-list" class="chip-list">No walls yet.</div>
+          <div id="scene-wall-edit" class="sub-card" style="display:none">
+            <div class="field"><label>Height: <span id="wall-height-lbl">0.45</span></label>
+              <input type="range" id="wall-height" min="0.05" max="10" step="0.05" value="0.45" oninput="sceneWallEdit('height',this.value)"></div>
+            <button class="btn btn-secondary btn-sm btn-full" onclick="sceneWallDelete()">🗑 Delete wall</button>
+          </div>
+        </div>
+
+        <!-- No-walk zones -->
+        <div class="section">
+          <h3>No-walk Zones</h3>
+          <p class="hint">Areas the character won't enter — it treats their edge as the end of the floor.
+            Use the <b>⬣ No-walk</b> tool to draw one (click corners, click the first point to close);
+            switch to <b>✥ Select</b> to pick a zone or delete it.</p>
+          <div id="scene-zone-list" class="chip-list">No zones yet.</div>
+          <div id="scene-zone-edit" class="sub-card" style="display:none">
+            <button class="btn btn-secondary btn-sm btn-full" onclick="sceneZoneDelete()">🗑 Delete zone</button>
+          </div>
+        </div>
+
+        <!-- Doors (character entry / cross-screen passage) -->
+        <div class="section">
+          <h3>Doors (entry)</h3>
+          <p class="hint">Marks where the character <b>enters this screen</b>. With multiple screens it walks
+            in through the door when crossing over, and the scene starts there. Use the <b>🚪 Door</b> tool
+            to place one per screen; Select to move or delete it.</p>
+          <div id="scene-door-list" class="chip-list">No door yet.</div>
+          <div id="scene-door-edit" class="sub-card" style="display:none">
+            <button class="btn btn-secondary btn-sm btn-full" onclick="sceneDoorDelete()">🗑 Delete door</button>
           </div>
         </div>
 
