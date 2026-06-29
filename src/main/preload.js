@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('deskbuddy', {
   saveAnimationPack:    (name, d) => ipcRenderer.invoke('save-animation-pack', { name, data: d }),
   readFileBuffer:       (p)       => ipcRenderer.invoke('read-file-buffer', p),
 
+  // Animation source library (reusable across characters)
+  saveAnimationSource:   (d) => ipcRenderer.invoke('save-animation-source', d),
+  listAnimationSources:  ()  => ipcRenderer.invoke('list-animation-sources'),
+  deleteAnimationSource: (p) => ipcRenderer.invoke('delete-animation-source', p),
+
   // Directories
   getAnimationsDir:  () => ipcRenderer.invoke('get-animations-dir'),
   getCharactersDir:  () => ipcRenderer.invoke('get-characters-dir'),
@@ -31,16 +36,21 @@ contextBridge.exposeInMainWorld('deskbuddy', {
   saveScene:  (d)   => ipcRenderer.invoke('save-scene', d),
   pickImage:  ()    => ipcRenderer.invoke('pick-image'),
   setSceneWallpaper:   (f) => ipcRenderer.invoke('set-scene-wallpaper', f),
+  setSpannedWallpaper: (d) => ipcRenderer.invoke('set-spanned-wallpaper', d),
+  setPerMonitorWallpaper: (f) => ipcRenderer.invoke('set-per-monitor-wallpaper', f),
   clearSceneWallpaper: ()  => ipcRenderer.invoke('clear-scene-wallpaper'),
-  enterWallpaperMode:  ()  => ipcRenderer.invoke('enter-wallpaper-mode'),
+  enterWallpaperMode:  (opts) => ipcRenderer.invoke('enter-wallpaper-mode', opts),
   exitWallpaperMode:   ()  => ipcRenderer.invoke('exit-wallpaper-mode'),
   sceneChanged:        (p) => ipcRenderer.invoke('scene-changed', p),
   setPropHitboxes:     (b) => ipcRenderer.invoke('set-prop-hitboxes', b),
   setSceneInteractive: (v) => ipcRenderer.invoke('set-scene-interactive', v),
+  setSceneClickMove:   (v) => ipcRenderer.invoke('set-scene-clickmove', v),
+  setPropCapture:      (v) => ipcRenderer.invoke('set-prop-capture', v),
 
   // Window (dragging is native via -webkit-app-region: drag in the overlay)
   getWindowPos:     ()     => ipcRenderer.invoke('get-window-pos'),
   resizeOverlay:    (w, h) => ipcRenderer.invoke('resize-overlay', [w, h]),
+  moveOverlayTo:    (x, y) => ipcRenderer.invoke('move-overlay-to', [x, y]),
   getWorkArea:      ()     => ipcRenderer.invoke('get-work-area'),
   getOverlayBounds: ()     => ipcRenderer.invoke('get-overlay-bounds'),
   dockBottom:       ()     => ipcRenderer.invoke('dock-overlay-bottom'),
@@ -66,6 +76,9 @@ contextBridge.exposeInMainWorld('deskbuddy', {
   setIgnoreMouse: (v) => ipcRenderer.invoke('set-ignore-mouse', v),
   getIdleSeconds: ()  => ipcRenderer.invoke('get-idle-seconds'),
   getServerPort:  ()  => ipcRenderer.invoke('get-server-port'),
+
+  // Platform (renderer hit-tests props itself on win32/darwin — see overlay mousemove)
+  platform: process.platform,
 
   // Events
   onCharacterChanged: (cb) => ipcRenderer.on('character-changed', (_, p) => cb(p)),

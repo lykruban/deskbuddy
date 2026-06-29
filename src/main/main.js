@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, dialog, shell, nativeImage, powerMonitor, screen } = require('electron');
 const path = require('path');
 const fs   = require('fs');
-const { exec, execSync, spawn } = require('child_process');
+const { exec, execSync, spawn, execFile, execFileSync } = require('child_process');
 const { promisify } = require('util');
 const pexec = promisify(exec);
 const { startServer, stopServer, PORT } = require('../server/server');
@@ -10,7 +10,12 @@ const { startServer, stopServer, PORT } = require('../server/server');
 // (click-through) and setPosition are no-ops, which broke scene mode (the full-screen
 // overlay swallowed every click). Under XWayland these work properly. Must be set
 // before app is ready. Honoured on Linux; harmless elsewhere.
-if (process.platform === 'linux') app.commandLine.appendSwitch('ozone-platform', 'x11');
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+  // Dev/AppImage sandboxing often fails on Linux; previously passed as a CLI flag in
+  // the `start` script, now applied here so the script is cross-platform.
+  app.commandLine.appendSwitch('no-sandbox');
+}
 
 // Single instance only. Multiple overlays would each toggle scene click-through
 // independently and fight each other (props flicker between clickable/not). If another
@@ -146,14 +151,49 @@ function trayTemplate() {
         { label: 'Exit Scene', enabled: !!currentScenePath, click: () => sendCmd('scene:exit') },
     ] },
     { label: 'Buddy Menu…',      click: () => sendCmd('open-menu') },
+    // Click-to-move (display targeting now lives in Character Studio → Scene settings).
+    { label: 'Click to Move', type: 'checkbox', checked: loadSettings().clickToMove === true,
+      click: () => { const s = loadSettings(); s.clickToMove = !(s.clickToMove === true); saveSettings(s); sendCmd('clickmove'); refreshTray(); } },
+    // (Behind Desktop Icons removed for now — reparenting the transparent, GPU-accelerated
+    // overlay into the WorkerW wallpaper layer crashes Chromium's compositor. The scene just
+    // floats in front of the icons until that's reworked.)
+    // Quality also drives shadow quality (low/medium/high) — exposed here so it's
+    // adjustable while a scene plays (the buddy itself is click-through then). We persist
+    // it in main too so the radio reflects the choice when the tray menu reopens.
+    { label: 'Quality', submenu: ['low', 'medium', 'high'].map(q => ({
+        label: q[0].toUpperCase() + q.slice(1), type: 'radio',
+        checked: (loadSettings().quality || 'medium') === q,
+        click: () => { const s = loadSettings(); s.quality = q; saveSettings(s); sendCmd('quality:' + q); refreshTray(); },
+    })) },
+    { label: 'Frame rate', submenu: [30, 60, 120].map(n => ({
+        label: n + ' FPS', type: 'radio', checked: Number(loadSettings().fps || 60) === n,
+        click: () => { const s = loadSettings(); s.fps = n; saveSettings(s); sendCmd('fps:' + n); refreshTray(); },
+    })) },
+    { label: 'Light & Shadow', submenu: (() => {
+        const lm = loadSettings().lightMode;
+        const cur = lm === 'high' ? 'high' : (lm === 'low' || lm === 'off') ? 'low' : 'medium';
+        return [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']].map(([m, label]) => ({
+          label, type: 'radio', checked: cur === m,
+          click: () => { const s = loadSettings(); s.lightMode = m; saveSettings(s); sendCmd('lightmode:' + m); refreshTray(); },
+        }));
+      })() },
+    { label: 'Cast Shadow', type: 'checkbox', checked: loadSettings().shadow !== false,
+      click: () => { const s = loadSettings(); s.shadow = !(s.shadow !== false); saveSettings(s); sendCmd('shadow'); refreshTray(); },
+    },
     { type: 'separator' },
     { label: 'Character Studio', click: createStudioWindow },
-    { label: 'Marketplace',      click: createMarketplaceWindow },
+    { label: 'Marketplace — Coming Soon', enabled: false },
     { type: 'separator' },
     { label: 'Quit DeskBuddy',   click: () => app.quit() },
   ];
 }
 function refreshTray() { if (tray) tray.setContextMenu(Menu.buildFromTemplate(trayTemplate())); }
+// Change which display(s) a scene targets; reload the active scene so the new bounds +
+// wallpaper (span vs single) take effect immediately.
+function setSceneDisplay(v) {
+  const s = loadSettings(); s.sceneDisplay = v; saveSettings(s); refreshTray();
+  if (currentScenePath) overlayWindow?.webContents.send('menu-command', 'scene:' + currentScenePath);
+}
 function createTray() {
   const iconPath = path.join(__dirname, '../../assets/icons/tray.png');
   const icon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
@@ -169,6 +209,12 @@ function createTray() {
 // Wayland. Position is persisted from the window's own `moved` event above.
 ipcMain.handle('get-window-pos', () => overlayWindow?.getPosition() ?? [80, 80]);
 ipcMain.handle('resize-overlay', (_, [w, h]) => { overlayWindow?.setSize(Math.round(w), Math.round(h)); });
+// Native grab-and-drag (Windows/macOS): the renderer streams absolute positions while
+// the user drags the buddy. No-op while maximized/in a scene (setBounds owns position then).
+ipcMain.handle('move-overlay-to', (_, [x, y]) => {
+  if (!overlayWindow || overlayWindow.isMaximized()) return;
+  try { overlayWindow.setPosition(Math.round(x), Math.round(y)); } catch {}
+});
 
 // Screen geometry — used to detect/sit on the taskbar. `workArea` excludes the
 // taskbar/panels, so its bottom edge is the taskbar's top edge.
@@ -204,7 +250,7 @@ ipcMain.handle('show-context-menu', (_, p = {}) => {
     { label: '✥  Move / Reposition', click: () => send('move') },
     { type: 'separator' },
     { label: 'Character Studio', click: () => send('studio') },
-    { label: 'Marketplace',      click: () => send('market') },
+    { label: 'Marketplace — Coming Soon', enabled: false },
     { type: 'separator' },
     { label: 'Scene', submenu: [
         ...listScenesSync().map(s => ({
@@ -225,11 +271,12 @@ ipcMain.handle('show-context-menu', (_, p = {}) => {
         label: q[0].toUpperCase() + q.slice(1), type: 'radio', checked: p.quality === q, click: () => send('quality:' + q) })) },
     { label: 'Frame rate', submenu: [30, 60, 120].map(n => ({
         label: n + ' FPS', type: 'radio', checked: Number(p.fps) === n, click: () => send('fps:' + n) })) },
-    { label: 'Light & Shadow', submenu: [
-        { label: 'Off (normal light)',     type: 'radio', checked: f.lightMode === 'off',  click: () => send('lightmode:off') },
-        { label: 'On (colour bounce)',     type: 'radio', checked: (f.lightMode || 'on') === 'on', click: () => send('lightmode:on') },
-        { label: 'High (rendered shadow)', type: 'radio', checked: f.lightMode === 'high', click: () => send('lightmode:high') },
-      ] },
+    { label: 'Light & Shadow', submenu: (() => {
+        const cur = f.lightMode === 'high' ? 'high' : (f.lightMode === 'low' || f.lightMode === 'off') ? 'low' : 'medium';
+        return [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']].map(([m, label]) => ({
+          label, type: 'radio', checked: cur === m, click: () => send('lightmode:' + m),
+        }));
+      })() },
     { label: 'Clickable props', type: 'checkbox', checked: f.propClicks !== false, click: () => send('propclicks') },
     { type: 'separator' },
     { label: 'Bigger  (+20%)', click: () => send('bigger') },
@@ -408,6 +455,35 @@ ipcMain.handle('list-animation-packs', () => {
     });
 });
 
+// ── Animation source library ───────────────────────────────────────────────────
+// Imported animation FILES (FBX/GLB/BVH) are kept in the app so any character can reuse
+// them: adding from the library re-imports + retargets the source for that character.
+const ANIM_SRC_EXTS = ['fbx', 'glb', 'gltf', 'bvh'];
+ipcMain.handle('save-animation-source', (_, { name, bytes, ext }) => {
+  ensureDirs();
+  const safe = (name || 'animation').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const e = ANIM_SRC_EXTS.includes(String(ext).toLowerCase()) ? String(ext).toLowerCase() : 'fbx';
+  let dest = path.join(ANIMATIONS_DIR, `${safe}.${e}`), n = 1;
+  while (fs.existsSync(dest)) dest = path.join(ANIMATIONS_DIR, `${safe}-${n++}.${e}`);
+  fs.writeFileSync(dest, Buffer.from(bytes));
+  return { ok: true, path: dest, filename: path.basename(dest) };
+});
+ipcMain.handle('list-animation-sources', () => {
+  ensureDirs();
+  return fs.readdirSync(ANIMATIONS_DIR)
+    .filter(f => ANIM_SRC_EXTS.some(e => f.toLowerCase().endsWith('.' + e)))
+    .map(f => {
+      const p = path.join(ANIMATIONS_DIR, f);
+      let mtime = 0; try { mtime = fs.statSync(p).mtimeMs; } catch {}
+      return { filename: f, name: f.replace(/\.[^.]+$/, ''), ext: (f.split('.').pop() || '').toLowerCase(), path: p, mtime };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+});
+ipcMain.handle('delete-animation-source', (_, p) => {
+  try { if (p && fs.existsSync(p) && path.dirname(p) === ANIMATIONS_DIR) fs.unlinkSync(p); return { ok: true }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+
 // Open file dialog for animation clips (Mixamo FBX, BVH mocap, animated glTF)
 ipcMain.handle('import-fbx-animation', async () => {
   const r = await dialog.showOpenDialog({
@@ -452,7 +528,15 @@ ipcMain.handle('read-file-buffer', (_, filePath) => {
 ipcMain.handle('open-studio',      () => { createStudioWindow(); return true; });
 ipcMain.handle('open-marketplace', () => { createMarketplaceWindow(); return true; });
 ipcMain.handle('open-external',    (_, url) => shell.openExternal(url));
-ipcMain.handle('set-always-on-top', (_, v) => { overlayWindow?.setAlwaysOnTop(v, 'screen-saver'); const s = loadSettings(); s.alwaysOnTop = v; saveSettings(s); });
+ipcMain.handle('set-always-on-top', (_, v) => {
+  // 'floating' (not 'screen-saver') keeps the overlay above windows WITHOUT triggering
+  // Windows' fullscreen-exclusive detection that hides the taskbar. Re-assert click-through
+  // since setAlwaysOnTop drops the input-shape region.
+  try { overlayWindow?.setAlwaysOnTop(!!v, 'floating'); } catch {}
+  const s = loadSettings(); s.alwaysOnTop = v; saveSettings(s);
+  const reassert = () => applySceneInteractive();
+  reassert(); setTimeout(reassert, 80); setTimeout(reassert, 300);
+});
 ipcMain.handle('set-ignore-mouse', (_, v)  => { overlayWindow?.setIgnoreMouseEvents(v, { forward: true }); });
 ipcMain.handle('get-idle-seconds', () => powerMonitor.getSystemIdleTime());
 ipcMain.handle('get-server-port',  () => PORT);
@@ -475,11 +559,21 @@ ipcMain.handle('save-scene', (_, { name, scenepack }) => {
     fs.writeFileSync(path.join(SCENES_DIR, fname), Buffer.from(dataUrl.split(',')[1], 'base64'));
     return fname;
   };
-  if (scenepack._bgData) { const fn = writeData(scenepack._bgData, 'bg'); if (fn) scenepack.background = fn; }
-  delete scenepack._bgData;
-  for (const it of (scenepack.foregrounds || [])) {
-    if (it._dataUrl) { const fn = writeData(it._dataUrl, it.id || 'fg'); if (fn) it.image = fn; }
-    delete it._dataUrl;
+  // Write inlined images to disk for a room (or the legacy top-level), keyed so each
+  // room's files don't collide.
+  const writeRoomImages = (room, prefix) => {
+    if (room._bgData) { const fn = writeData(room._bgData, prefix + 'bg'); if (fn) room.background = fn; }
+    delete room._bgData;
+    for (const it of (room.foregrounds || [])) {
+      if (it._dataUrl) { const fn = writeData(it._dataUrl, prefix + (it.id || 'fg')); if (fn) it.image = fn; }
+      delete it._dataUrl;
+    }
+  };
+  writeRoomImages(scenepack, '');                       // legacy top-level (= room 0 mirror)
+  if (Array.isArray(scenepack.rooms)) {
+    scenepack.rooms.forEach((room, i) => writeRoomImages(room, `r${i}-`));
+    // keep the top-level mirror (room 0) consistent with the written filenames
+    if (scenepack.rooms[0]) { scenepack.background = scenepack.rooms[0].background; scenepack.foregrounds = scenepack.rooms[0].foregrounds; }
   }
   delete scenepack.foreground;   // drop the legacy single-foreground field
   const dest = path.join(SCENES_DIR, `${safe}.scenepack`);
@@ -551,19 +645,59 @@ async function gsGet(key) {
 async function gsSet(key, val) {
   try { await pexec(`gsettings set ${GSET} ${key} "${val}"`); return true; } catch { return false; }
 }
+
+// ── Windows wallpaper (Win32 SystemParametersInfo via PowerShell) ────────────
+// We drive PowerShell with -EncodedCommand (UTF-16LE base64) so script content needs
+// no shell-escaping. SPI_SETDESKWALLPAPER=20; SPIF_UPDATEINIFILE|SENDWININICHANGE=3.
+// WallpaperStyle 2 = stretched (matches the GNOME 'stretched' so the floor lines up).
+function psEncode(script) { return Buffer.from(script, 'utf16le').toString('base64'); }
+function winSetWallpaperScript(p, style, tile) {
+  const esc = (v) => String(v).replace(/'/g, "''");
+  return `
+$ErrorActionPreference='SilentlyContinue'
+$ProgressPreference='SilentlyContinue'
+Set-ItemProperty 'HKCU:\\Control Panel\\Desktop' WallpaperStyle '${esc(style ?? 2)}'
+Set-ItemProperty 'HKCU:\\Control Panel\\Desktop' TileWallpaper '${esc(tile ?? 0)}'
+Add-Type -Namespace DeskBuddy -Name Wp -MemberDefinition '[DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] public static extern int SystemParametersInfo(int a,int b,string c,int d);'
+[DeskBuddy.Wp]::SystemParametersInfo(20,0,'${esc(p)}',3) | Out-Null`;
+}
+function regGet(name) {
+  try {
+    const o = execSync(`reg query "HKCU\\Control Panel\\Desktop" /v ${name}`, { encoding: 'utf8', timeout: 4000 });
+    const m = o.match(new RegExp(name + '\\s+REG_\\w+\\s+(.*)', 'i'));
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+}
+function winGetWallpaper() {
+  return { path: regGet('WallPaper'), style: regGet('WallpaperStyle') || '2', tile: regGet('TileWallpaper') || '0' };
+}
+async function winSetWallpaper(p, style, tile) {
+  try { await pexec(`powershell -NoProfile -NonInteractive -EncodedCommand ${psEncode(winSetWallpaperScript(p, style, tile))}`, { timeout: 8000 }); return true; }
+  catch { return false; }
+}
+
 async function snapshotWallpaper() {
   const s = loadSettings();
-  if (s.wallpaperBackup || !isGnome()) return;   // keep the first (true original) backup
-  s.wallpaperBackup = {
-    uri:     await gsGet('picture-uri'),
-    uriDark: await gsGet('picture-uri-dark'),
-    options: await gsGet('picture-options'),
-  };
+  if (s.wallpaperBackup) return;   // keep the first (true original) backup
+  if (isGnome()) {
+    s.wallpaperBackup = {
+      kind: 'gnome',
+      uri:     await gsGet('picture-uri'),
+      uriDark: await gsGet('picture-uri-dark'),
+      options: await gsGet('picture-options'),
+    };
+  } else if (process.platform === 'win32') {
+    s.wallpaperBackup = { kind: 'win', ...winGetWallpaper() };
+  } else return;
   saveSettings(s);
 }
 async function restoreWallpaper() {
   const s = loadSettings(); const bk = s.wallpaperBackup;
-  if (bk && isGnome()) {
+  if (bk?.kind === 'win-multi' && process.platform === 'win32') {
+    await runDw('restore', bk.monitors.map(m => m.left + '=' + m.path).join(';'));
+  } else if (bk?.kind === 'win' && process.platform === 'win32') {
+    if (bk.path) await winSetWallpaper(bk.path, bk.style, bk.tile);
+  } else if (bk && (bk.kind === 'gnome' || bk.uri) && isGnome()) {   // bk.uri: legacy untagged backup
     if (bk.options) await gsSet('picture-options', bk.options);
     if (bk.uri)     await gsSet('picture-uri', bk.uri);
     if (bk.uriDark) await gsSet('picture-uri-dark', bk.uriDark);
@@ -574,7 +708,12 @@ function restoreWallpaperSync() {
   const s = loadSettings(); const bk = s.wallpaperBackup;
   if (!bk) return;
   try {
-    if (isGnome()) {
+    if (bk.kind === 'win-multi' && process.platform === 'win32') {
+      const data = bk.monitors.map(m => m.left + '=' + m.path).join(';');
+      execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ensureDwScript(), '-Mode', 'restore', '-Data', data], { timeout: 12000 });
+    } else if (bk.kind === 'win' && process.platform === 'win32') {
+      if (bk.path) execSync(`powershell -NoProfile -NonInteractive -EncodedCommand ${psEncode(winSetWallpaperScript(bk.path, bk.style, bk.tile))}`, { timeout: 8000 });
+    } else if ((bk.kind === 'gnome' || bk.uri) && isGnome()) {
       if (bk.options) execSync(`gsettings set ${GSET} picture-options "${bk.options}"`);
       if (bk.uri)     execSync(`gsettings set ${GSET} picture-uri "${bk.uri}"`);
       if (bk.uriDark) execSync(`gsettings set ${GSET} picture-uri-dark "${bk.uriDark}"`);
@@ -597,10 +736,175 @@ ipcMain.handle('set-scene-wallpaper', async (_, filename) => {
     const a = await gsSet('picture-uri', uri);
     const b = await gsSet('picture-uri-dark', uri);
     ok = a || b;
+  } else if (process.platform === 'win32') {
+    // Span (22) across all monitors when the scene spans displays; otherwise fill (2).
+    const span = loadSettings().sceneDisplay === 'all';
+    ok = await winSetWallpaper(abs, span ? 22 : 2, 0);
   }
-  return { ok, gnome: isGnome() };
+  return { ok, gnome: isGnome(), platform: process.platform };
 });
 ipcMain.handle('clear-scene-wallpaper', async () => { await restoreWallpaper(); return { ok: true }; });
+
+// Multi-display: a pre-stitched, virtual-desktop-sized image set as a SPAN wallpaper so each
+// monitor shows its room and the overlay can stay transparent (icons/taskbar visible).
+ipcMain.handle('set-spanned-wallpaper', async (_, dataUrl) => {
+  if (!dataUrl || typeof dataUrl !== 'string') return { ok: false };
+  const m = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+  if (!m) return { ok: false };
+  await snapshotWallpaper();
+  const file = path.join(SCENES_DIR, '_spanned-wallpaper.png');
+  try { fs.writeFileSync(file, Buffer.from(m[1], 'base64')); } catch (e) { return { ok: false, error: e.message }; }
+  let ok = false;
+  if (process.platform === 'win32') ok = await winSetWallpaper(file, 22, 0);   // 22 = Span across monitors
+  else if (isGnome()) { await gsSet('picture-options', 'spanned'); const uri = 'file://' + file; ok = (await gsSet('picture-uri', uri)) || (await gsSet('picture-uri-dark', uri)); }
+  return { ok, platform: process.platform };
+});
+
+// ── Per-monitor wallpaper (Windows IDesktopWallpaper COM) ───────────────────────
+// True isolation: each monitor gets its OWN room background (no Span, which mis-maps when
+// monitors differ in size/position). Images are assigned left→right, matching the scene's
+// room order. Position 2 = STRETCH so image [0,1] == monitor [0,1], lining up with the floor.
+const DW_PS = `param([string]$Mode,[string]$Data)
+$ErrorActionPreference='Stop'
+$cs=@"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+namespace DB {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IDesktopWallpaper {
+    void SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string m, [MarshalAs(UnmanagedType.LPWStr)] string w);
+    [return: MarshalAs(UnmanagedType.LPWStr)] string GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string m);
+    [return: MarshalAs(UnmanagedType.LPWStr)] string GetMonitorDevicePathAt(uint i);
+    uint GetMonitorDevicePathCount();
+    RECT GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string m);
+    void SetBackgroundColor(uint c); uint GetBackgroundColor();
+    void SetPosition(int p); int GetPosition();
+  }
+  [ComImport, Guid("C2CF3110-460E-4FC1-B9D0-8A1C0C9CC4BD")] public class CoDW { }
+  public static class DW {
+    static IDesktopWallpaper N(){ return (IDesktopWallpaper)(new CoDW()); }
+    static List<KeyValuePair<int,string>> Mons(IDesktopWallpaper d){
+      var L=new List<KeyValuePair<int,string>>(); uint n=d.GetMonitorDevicePathCount();
+      for(uint i=0;i<n;i++){ string id=d.GetMonitorDevicePathAt(i); try{ var r=d.GetMonitorRECT(id); L.Add(new KeyValuePair<int,string>(r.L,id)); }catch{} }
+      L.Sort((a,b)=>a.Key.CompareTo(b.Key)); return L;
+    }
+    public static string List(){ var d=N(); var s=""; foreach(var m in Mons(d)){ s+=m.Key+"|"+d.GetWallpaper(m.Value)+"\\n"; } return s; }
+    public static void ApplyOrdered(string[] paths, int pos){ var d=N(); var m=Mons(d); d.SetPosition(pos); for(int i=0;i<paths.Length && i<m.Count;i++){ if(!string.IsNullOrEmpty(paths[i])) d.SetWallpaper(m[i].Value, paths[i]); } }
+    public static void RestoreByLeft(int[] lefts, string[] paths){ var d=N(); foreach(var m in Mons(d)){ for(int k=0;k<lefts.Length;k++){ if(lefts[k]==m.Key && !string.IsNullOrEmpty(paths[k])){ try{ d.SetWallpaper(m.Value, paths[k]); }catch{} } } } }
+  }
+}
+"@
+Add-Type -TypeDefinition $cs
+if($Mode -eq 'list'){ [DB.DW]::List() }
+elseif($Mode -eq 'apply'){ $p=$Data -split '\\|'; [DB.DW]::ApplyOrdered([string[]]$p,2) }
+elseif($Mode -eq 'restore'){ $rows=$Data -split ';'; $lefts=@(); $paths=@(); foreach($r in $rows){ if($r){ $kv=$r -split '=',2; $lefts+=[int]$kv[0]; $paths+=$kv[1] } }; [DB.DW]::RestoreByLeft([int[]]$lefts,[string[]]$paths) }`;
+let dwScript = null;
+function ensureDwScript() {
+  if (dwScript) return dwScript;
+  dwScript = path.join(app.getPath('userData'), '_dw.ps1');
+  try { fs.writeFileSync(dwScript, DW_PS); } catch {}
+  return dwScript;
+}
+function runDw(mode, data) {
+  return new Promise((resolve) => {
+    try {
+      execFile('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ensureDwScript(), '-Mode', mode, '-Data', data || ''],
+        { timeout: 12000 }, (err, stdout) => resolve(err ? null : (stdout || '')));
+    } catch { resolve(null); }
+  });
+}
+// Snapshot the current per-monitor wallpapers (so we can restore them exactly on exit).
+async function snapshotPerMonitor() {
+  const s = loadSettings();
+  if (s.wallpaperBackup) return;   // keep the first true-original backup
+  const out = await runDw('list', '');
+  if (out == null) return;
+  const monitors = out.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const i = l.indexOf('|'); return { left: parseInt(l.slice(0, i), 10), path: l.slice(i + 1) }; });
+  if (monitors.length) { s.wallpaperBackup = { kind: 'win-multi', monitors }; saveSettings(s); }
+}
+ipcMain.handle('set-per-monitor-wallpaper', async (_, filenames) => {
+  if (process.platform !== 'win32' || !Array.isArray(filenames)) return { ok: false };
+  const abs = filenames.map(f => (!f ? '' : (path.isAbsolute(f) ? f : path.join(SCENES_DIR, f))));
+  if (!abs.some(Boolean)) return { ok: false };
+  await snapshotPerMonitor();
+  const out = await runDw('apply', abs.join('|'));
+  return { ok: out != null };
+});
+
+// ── Living-wallpaper layer (Windows WorkerW) ────────────────────────────────────
+// Reparent the overlay INTO the desktop's wallpaper layer so it renders BEHIND the
+// desktop icons (icons, taskbar and app windows all sit on top) — a true living
+// wallpaper, and the desktop stays fully usable because the window is no longer in the
+// click path at all. We spawn the WorkerW (SendMessage 0x052C to Progman), find it, then
+// SetParent the overlay to it and SetWindowPos it to the scene's virtual-desktop rect.
+const WORKERW_PS = `param([string]$Hwnd,[string]$Mode,[int]$X,[int]$Y,[int]$W,[int]$H)
+Add-Type @"
+using System;using System.Runtime.InteropServices;
+public class WW{
+ [DllImport("user32.dll")] public static extern IntPtr FindWindow(string c,string w);
+ [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr p,IntPtr c,string cl,string wn);
+ [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr h,uint m,IntPtr w,IntPtr l,uint f,uint t,out IntPtr r);
+ [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb,IntPtr l);
+ [DllImport("user32.dll")] public static extern IntPtr SetParent(IntPtr c,IntPtr p);
+ [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd,IntPtr after,int x,int y,int cx,int cy,uint flags);
+ public delegate bool EnumProc(IntPtr h,IntPtr l);
+ public static IntPtr worker=IntPtr.Zero;
+ public static IntPtr Find(){
+  IntPtr progman=FindWindow("Progman",null);IntPtr res;
+  SendMessageTimeout(progman,0x052C,new IntPtr(0),IntPtr.Zero,0,1000,out res);
+  worker=IntPtr.Zero;
+  EnumWindows(new EnumProc((top,p)=>{
+   if(FindWindowEx(top,IntPtr.Zero,"SHELLDLL_DefView",null)!=IntPtr.Zero){worker=FindWindowEx(IntPtr.Zero,top,"WorkerW",null);}
+   return true;}),IntPtr.Zero);
+  if(worker==IntPtr.Zero) worker=progman;
+  return worker;}
+}
+"@
+$h=[IntPtr]::new([int64]::Parse($Hwnd))
+if($Mode -eq "below"){
+ $w=[WW]::Find()
+ [WW]::SetParent($h,$w) | Out-Null
+ [WW]::SetWindowPos($h,[IntPtr]::Zero,$X,$Y,$W,$H,0x0010) | Out-Null
+ Write-Output ("below parent="+$w.ToString())
+}else{
+ [WW]::SetParent($h,[IntPtr]::Zero) | Out-Null
+ Write-Output "above"
+}`;
+let workerwScript = null;
+function ensureWorkerwScript() {
+  if (workerwScript) return workerwScript;
+  workerwScript = path.join(app.getPath('userData'), '_workerw.ps1');
+  try { fs.writeFileSync(workerwScript, WORKERW_PS); } catch {}
+  return workerwScript;
+}
+// Reparent the overlay below the icons (below=true) or detach back to a normal top-level
+// window (below=false). No-op off Windows.
+function setBehindIcons(below) {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32' || !overlayWindow) return resolve(false);
+    let hwnd;
+    try { hwnd = overlayWindow.getNativeWindowHandle().readBigUInt64LE(0).toString(); } catch { return resolve(false); }
+    // WorkerW-relative target rect (physical px). WorkerW spans the virtual desktop, so the
+    // child's origin is the scene's union minus the virtual-desktop origin, scaled to pixels.
+    const all = screen.getAllDisplays();
+    let vx = Infinity, vy = Infinity; for (const d of all) { vx = Math.min(vx, d.bounds.x); vy = Math.min(vy, d.bounds.y); }
+    const b = (sceneRoomLayout && sceneRoomLayout.bounds) || (overlayWindow.getBounds());
+    const sf = screen.getPrimaryDisplay().scaleFactor || 1;
+    const X = Math.round((b.x - vx) * sf), Y = Math.round((b.y - vy) * sf);
+    const W = Math.round(b.width * sf), H = Math.round(b.height * sf);
+    try {
+      execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', ensureWorkerwScript(),
+        '-Hwnd', hwnd, '-Mode', below ? 'below' : 'above', '-X', String(X), '-Y', String(Y), '-W', String(W), '-H', String(H)],
+        { windowsHide: true, timeout: 9000 }, (err, stdout) => {
+          console.log('[workerw]', below ? 'below' : 'above', (stdout || '').toString().trim(), err ? ('ERR ' + err.message) : '');
+          resolve(!err);
+        });
+    } catch (e) { console.log('[workerw] spawn failed', e.message); resolve(false); }
+  });
+}
+let behindIconsActive = false;
 
 // Cover the screen with the transparent overlay so the character can roam the
 // whole wallpaper. Wayland blocks setPosition, so we maximize() (the window stays
@@ -614,7 +918,38 @@ let preWallpaperBounds = null;
 // the cursor to us and we make the overlay interactive ONLY while the cursor is over a
 // prop. Everywhere else stays click-through, so the desktop keeps working. If the helper
 // isn't available we fall back to making the whole scene interactive while enabled.
+// Windows & macOS support setIgnoreMouseEvents(..., { forward:true }) — the window stays
+// click-through but the renderer still RECEIVES mousemove, so it can hit-test props itself
+// and ask us to capture clicks per-hover. No external cursor helper needed there; the
+// Python/X11 helper below is the Linux-only fallback (Wayland breaks forwarding).
+const NATIVE_FORWARD = process.platform !== 'linux';
 let wallpaperActive = false, sceneInteractive = false, propHitboxes = [];
+let sceneClickMove = false;   // click anywhere on the floor → walk the character there
+let sceneRoomLayout = null;   // { bounds, rooms:[{x,y,w,h,displayId,bounds}] } for the active scene
+
+// ── Multi-display targeting ────────────────────────────────────────────────────
+// A scene can play on one display or SPAN all of them (one wide canvas). The target is
+// stored in settings.sceneDisplay: 'auto' (the display under the buddy), 'all' (span the
+// whole virtual desktop), or a specific display id.
+function unionBounds() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const d of screen.getAllDisplays()) {
+    const b = d.bounds;
+    x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+    x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height);
+  }
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+function sceneDisplayBounds() {
+  const sel = loadSettings().sceneDisplay || 'auto';
+  if (sel === 'all') return unionBounds();
+  if (sel !== 'auto') {
+    const d = screen.getAllDisplays().find(d => String(d.id) === String(sel));
+    if (d) return d.bounds;
+  }
+  const ref = preWallpaperBounds || (overlayWindow && overlayWindow.getBounds());
+  return (ref ? screen.getDisplayMatching(ref) : screen.getPrimaryDisplay()).bounds;
+}
 let cursorHelper = null, propInteractive = false, helperUnavailable = false;
 const PY_POINTER = "import sys,time,os\n" +
   "try:\n from Xlib import display\nexcept Exception:\n sys.exit(2)\n" +
@@ -630,7 +965,12 @@ let lastCursorTs = 0, cursorWatchdog = null;
 function setInteractive(on) {   // on = capture clicks (over a prop); off = click-through
   if (propInteractive === on) return;
   propInteractive = on;
-  try { if (overlayWindow) overlayWindow.setIgnoreMouseEvents(!on); } catch {}
+  try {
+    if (!overlayWindow) return;
+    // on = capture (cursor is over a prop); off = click-through so the desktop works. The
+    // cursor poll (Windows/macOS) or the X11 helper (Linux) calls this; no move-forwarding.
+    overlayWindow.setIgnoreMouseEvents(!on);
+  } catch {}
 }
 function onCursor(x, y) {
   lastCursorTs = Date.now();
@@ -638,7 +978,17 @@ function onCursor(x, y) {
   const b = overlayWindow.getBounds();
   let over = false;
   for (const r of propHitboxes) {
-    if (x >= b.x + r.x0 * b.width && x <= b.x + r.x1 * b.width && y >= b.y + r.y0 * b.height && y <= b.y + r.y1 * b.height) { over = true; break; }
+    const x0 = b.x + r.x0 * b.width, x1 = b.x + r.x1 * b.width;
+    const y0 = b.y + r.y0 * b.height, y1 = b.y + r.y1 * b.height;
+    if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+    // Inside the prop's bounding box. If we have its opacity mask, only a filled cell counts
+    // (so the prop's transparent margins pass clicks through); without a mask, fall back to
+    // the box. This is what keeps the click layer from leaking across the whole screen.
+    if (r.mask && r.mask.bits) {
+      const gx = Math.min(r.mask.w - 1, Math.max(0, Math.floor((x - x0) / (x1 - x0) * r.mask.w)));
+      const gy = Math.min(r.mask.h - 1, Math.max(0, Math.floor((y - y0) / (y1 - y0) * r.mask.h)));
+      if (r.mask.bits[gy * r.mask.w + gx] === '1') { over = true; break; }
+    } else { over = true; break; }
   }
   setInteractive(over);
 }
@@ -674,24 +1024,106 @@ function stopCursorHelper() {
   if (cursorWatchdog) { clearInterval(cursorWatchdog); cursorWatchdog = null; }
   propInteractive = false;
 }
+// Windows/macOS: poll the real cursor (getCursorScreenPoint works there, unlike Wayland) and
+// capture clicks ONLY while it's over a prop hitbox. This is far more robust than relying on
+// renderer-forwarded mousemoves — the window can never get stuck capturing the whole desktop.
+let cursorPoll = null;
+function startCursorPoll() {
+  if (cursorPoll) return;
+  cursorPoll = setInterval(() => {
+    if (!overlayWindow || !wallpaperActive || !sceneInteractive) { setInteractive(false); return; }
+    try { const p = screen.getCursorScreenPoint(); onCursor(p.x, p.y); } catch {}
+  }, 40);
+}
+function stopCursorPoll() { if (cursorPoll) { clearInterval(cursorPoll); cursorPoll = null; } }
 function applySceneInteractive() {
   if (!overlayWindow) return;
+  // Click-to-move: capture ALL clicks (the whole floor is clickable to send the character).
+  // The desktop is intercepted while this is on — it's a deliberate, user-toggled mode.
+  if (wallpaperActive && sceneClickMove) {
+    stopCursorHelper(); stopCursorPoll(); propInteractive = true;
+    try { overlayWindow.setIgnoreMouseEvents(false); } catch {}
+    return;
+  }
   const want = wallpaperActive && sceneInteractive;
-  if (!want) { stopCursorHelper(); try { overlayWindow.setIgnoreMouseEvents(wallpaperActive); } catch {} return; }
-  // No cursor helper available → stay click-through (desktop usable); props just won't be
-  // clickable. We never block the whole desktop.
+  if (!want) {
+    stopCursorHelper(); stopCursorPoll();
+    propInteractive = false;
+    // Fully click-through so the desktop is 100% usable. (No forwarding needed now that the
+    // cursor poll, not renderer moves, drives prop capture.)
+    try { overlayWindow.setIgnoreMouseEvents(true); } catch {}
+    return;
+  }
+  // Windows/macOS: poll the real cursor and capture ONLY while it's over a visible prop
+  // pixel (the renderer sends a per-prop opacity mask; onCursor tests it). This is robust —
+  // unlike { forward:true }, which doesn't reliably deliver mousemove to a transparent,
+  // click-through window, so the renderer never saw the cursor.
+  if (NATIVE_FORWARD) {
+    startCursorPoll();
+    try { overlayWindow.setIgnoreMouseEvents(!propInteractive); } catch {}
+    return;
+  }
+  // Linux: no move forwarding → stream the cursor from a helper. If unavailable, stay
+  // click-through (desktop usable); props just won't be clickable. We never block the desktop.
   if (helperUnavailable) { try { overlayWindow.setIgnoreMouseEvents(true); } catch {} return; }
   startCursorHelper();
   try { overlayWindow.setIgnoreMouseEvents(!propInteractive); } catch {}   // click-through until the cursor is over a prop
 }
-ipcMain.handle('set-scene-interactive', (_, on) => { sceneInteractive = !!on; applySceneInteractive(); });
+// Clickable props: capture clicks ONLY while the cursor is over a real (non-transparent)
+// prop pixel — the desktop stays fully click-through everywhere else, so the click layer
+// never leaks onto the whole screen. On Win/macOS the renderer does precise per-pixel
+// alpha hit-testing and drives capture via set-prop-capture; on Linux the X11 cursor
+// helper falls back to rect hit-testing (set-prop-hitboxes/onCursor). Honors propClicks.
+ipcMain.handle('set-scene-interactive', (_, v) => { sceneInteractive = !!v; applySceneInteractive(); });
+ipcMain.handle('set-scene-clickmove', (_, on) => { sceneClickMove = !!on; applySceneInteractive(); });
 ipcMain.handle('set-prop-hitboxes', (_, boxes) => { propHitboxes = Array.isArray(boxes) ? boxes : []; });
+// Legacy renderer-driven capture — superseded by the mask-aware cursor poll, which is
+// authoritative. Kept as a no-op so old renderer calls don't fight the poll.
+ipcMain.handle('set-prop-capture', () => {});
 
-ipcMain.handle('enter-wallpaper-mode', () => {
+// Pick the displays a scene uses (left→right) and the spanned bounds + per-room screen
+// regions (canvas fractions). 1 room = the display under the buddy; N rooms = the N
+// left-most displays (capped to what's connected), spanning their union.
+function sceneLayout(nRooms) {
+  const displays = screen.getAllDisplays().slice().sort((a, b) => a.bounds.x - b.bounds.x);
+  let used;
+  if (nRooms <= 1) {
+    const ref = preWallpaperBounds || (overlayWindow && overlayWindow.getBounds());
+    used = [ref ? screen.getDisplayMatching(ref) : screen.getPrimaryDisplay()];
+  } else {
+    used = displays.slice(0, Math.min(nRooms, displays.length));
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const d of used) { const b = d.bounds; x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height); }
+  const bounds = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  const N = Math.max(1, nRooms);
+  const rooms = [];
+  if (N <= used.length) {
+    // One room per monitor — each room fills its own display (works at any size/aspect ratio).
+    for (let i = 0; i < N; i++) {
+      const b = used[i].bounds;
+      rooms.push({ x: (b.x - x0) / bounds.width, y: (b.y - y0) / bounds.height, w: b.width / bounds.width, h: b.height / bounds.height, displayId: used[i].id, bounds: b });
+    }
+  } else {
+    // Fewer monitors than rooms: tile the available area into N equal vertical strips so EVERY
+    // room still gets its own distinct region (no overlap → clipping works, nothing bleeds). The
+    // scene then shows all rooms side-by-side on the screens you do have.
+    for (let i = 0; i < N; i++) {
+      rooms.push({ x: i / N, y: 0, w: 1 / N, h: 1, displayId: used[0].id,
+        bounds: { x: Math.round(x0 + bounds.width * i / N), y: y0, width: Math.round(bounds.width / N), height: bounds.height } });
+    }
+  }
+  return { bounds, rooms };
+}
+
+ipcMain.handle('enter-wallpaper-mode', (_, opts = {}) => {
   if (!overlayWindow) return null;
   const win = overlayWindow;
   preWallpaperBounds = win.getBounds();
-  const d = screen.getDisplayMatching(preWallpaperBounds);
+  const nRooms = Math.max(1, Math.round(opts.rooms || 1));
+  const layout = sceneLayout(nRooms);
+  const d = { bounds: layout.bounds };   // single display, or the union across rooms
+  sceneRoomLayout = layout;              // remembered for per-room wallpaper
   win.setResizable(true);
   // Make the window fully click-through so the desktop stays usable; all scene
   // control lives in the tray. The catch: the WM reconfigures the window when it
@@ -711,12 +1143,22 @@ ipcMain.handle('enter-wallpaper-mode', () => {
   setTimeout(reassert, 120);
   setTimeout(reassert, 400);
   const b = win.getContentBounds();
-  console.log('[wallpaper] enter: bounds=', d.bounds.width, 'x', d.bounds.height, 'content=', b.width, 'x', b.height);
-  return { width: d.bounds.width, height: d.bounds.height };
+  console.log('[wallpaper] enter: rooms=', nRooms, 'bounds=', d.bounds.width, 'x', d.bounds.height, 'content=', b.width, 'x', b.height);
+  // Living-wallpaper: drop the overlay BEHIND the desktop icons (icons/taskbar on top, desktop
+  // usable). Done after the bounds settle so the WorkerW SetWindowPos lands on the final rect.
+  behindIconsActive = false;
+  // Opt-in only (default OFF): the WorkerW reparent crashes the transparent GPU overlay.
+  if (process.platform === 'win32' && loadSettings().behindIcons === true) {
+    setTimeout(() => setBehindIcons(true).then(ok => { behindIconsActive = ok; }), 350);
+  }
+  // Strip the absolute display bounds from the returned regions (renderer only needs fractions).
+  const rooms = layout.rooms.map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
+  return { width: d.bounds.width, height: d.bounds.height, rooms };
 });
-ipcMain.handle('exit-wallpaper-mode', () => {
+ipcMain.handle('exit-wallpaper-mode', async () => {
   if (!overlayWindow) return;
-  wallpaperActive = false; stopCursorHelper();
+  wallpaperActive = false; stopCursorHelper(); stopCursorPoll();
+  if (behindIconsActive) { await setBehindIcons(false); behindIconsActive = false; }   // detach from the wallpaper layer first
   overlayWindow.setIgnoreMouseEvents(false);
   if (overlayWindow.isMaximized()) overlayWindow.unmaximize();
   if (preWallpaperBounds) { try { overlayWindow.setBounds(preWallpaperBounds); } catch {} }
