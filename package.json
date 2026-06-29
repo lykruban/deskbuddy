@@ -4,7 +4,7 @@
   "description": "3D desktop companion with marketplace",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "electron . --no-sandbox --ozone-platform=x11",
+    "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -22,8 +22,14 @@
       "node_modules/**/*"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "assets/icons/icon.ico"
+    },
+    "portable": {
+      "artifactName": "DeskBuddy-Portable-${version}.exe"
     },
     "mac": {
       "target": "dmg",
@@ -40,12 +46,12 @@
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.4",
     "cors": "^2.8.6",
-    "electron": "^42.4.0",
     "express": "^5.2.1",
     "multer": "^2.2.0",
     "three": "^0.184.0"
   },
   "devDependencies": {
+    "electron": "^42.4.0",
     "electron-builder": "^26.15.3"
   }
 }
