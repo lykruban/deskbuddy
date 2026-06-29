@@ -1,5 +1,7 @@
 // DeskBuddy Marketplace — characters + animation packs
 let API = 'http://localhost:4242/api';
+const SERVER = API.replace(/\/api$/, '');   // for /uploads (thumbnails)
+const thumbUrl = (f) => (f ? `${SERVER}/uploads/${f}` : '');
 
 // State
 let contentType = 'characters'; // 'characters' | 'animations'
@@ -67,7 +69,7 @@ window.logout = async () => {
 
 // ── Fetch ────────────────────────────────────────────────────────────────────
 async function fetchItems() {
-  if (activeTab === 'my-chars') return renderLibrary();
+  if (activeTab === 'my-chars') return renderMyLibrary();
   const params = new URLSearchParams({ sort: activeSort });
   if (searchQuery)            params.set('q',     searchQuery);
   if (activeFilter !== 'all') params.set('tag',   activeFilter);
@@ -109,14 +111,26 @@ function renderCards() {
     const isNew = (Date.now() - item.createdAt) < 7 * 24 * 60 * 60 * 1000;
     const isAnim = contentType === 'animations';
 
+    // Thumb: characters show their rendered model image (fallback emoji); animation packs
+    // show an emoji at rest and play a little skeleton preview on hover.
+    let thumbInner;
+    if (isAnim) {
+      thumbInner = `<canvas class="anim-canvas" width="220" height="160"></canvas><span class="card-emoji anim-emoji">${emoji}</span>`;
+    } else if (item.thumbnail) {
+      thumbInner = `<img class="card-img" src="${thumbUrl(item.thumbnail)}" alt="" loading="lazy"
+        onerror="this.remove()"><span class="card-emoji" style="position:absolute;z-index:-1">${emoji}</span>`;
+    } else {
+      thumbInner = `<span class="card-emoji">${emoji}</span>`;
+    }
+
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
       <div class="card-thumb">
-        ${emoji}
+        ${thumbInner}
         ${isNew ? '<span class="badge badge-new">NEW</span>' : ''}
         <span class="badge ${isFree ? 'badge-free' : 'badge-paid'}" style="top:${isNew ? 30 : 8}px">${priceLabel}</span>
-        ${isAnim ? '<span class="badge" style="bottom:8px;top:auto;background:rgba(139,92,246,.3);color:#c4b5fd;border:1px solid rgba(139,92,246,.4)">' + (item.clipCount || '?') + ' clips</span>' : ''}
+        ${isAnim ? '<span class="badge" style="bottom:8px;top:auto;background:rgba(139,92,246,.3);color:#c4b5fd;border:1px solid rgba(139,92,246,.4)">' + (item.clipCount || '?') + ' clips · hover to preview</span>' : ''}
       </div>
       <div class="card-body">
         <div class="card-name">${item.name}</div>
@@ -130,9 +144,149 @@ function renderCards() {
       </div>
       <div class="card-actions">
         <button class="btn btn-sm-sec" onclick="previewItem(${item.id})">Info</button>
-        <button class="btn btn-primary" onclick="downloadItem(${item.id},'${encodeURIComponent(item.name)}')">${isFree ? (isAnim ? 'Download Pack' : 'Download') : 'Buy · ' + priceLabel}</button>
+        <button class="btn btn-primary" onclick="downloadItem(${item.id},'${encodeURIComponent(item.name)}')">${isFree ? (isAnim ? 'Get Pack' : 'Get') : 'Buy · ' + priceLabel}</button>
       </div>`;
     grid.appendChild(card);
+
+    if (isAnim) attachAnimPreview(card, item.id);
+  });
+}
+
+// ── Animation hover preview ───────────────────────────────────────────────────
+// Plays a pack's first clip on a tiny 2D canvas so people see the motion before they
+// get it. Builds an approximate Mixamo-named humanoid and applies the clip's quaternion
+// tracks via forward kinematics — no Three.js, no rigged model needed. The seeded packs
+// author tracks as small local rotations from an upright rest pose, which is exactly what
+// this expects, so nods/waves/sways/dances read correctly.
+const SKELETON = [
+  // [bone, parent, restOffset(x,y,z)] — ordered parents-before-children
+  ['mixamorigHips', null, [0, 0, 0]],
+  ['mixamorigSpine', 'mixamorigHips', [0, 0.11, 0]],
+  ['mixamorigSpine1', 'mixamorigSpine', [0, 0.11, 0]],
+  ['mixamorigNeck', 'mixamorigSpine1', [0, 0.09, 0]],
+  ['mixamorigHead', 'mixamorigNeck', [0, 0.10, 0]],
+  ['mixamorigLeftShoulder', 'mixamorigSpine1', [0.045, 0.07, 0]],
+  ['mixamorigLeftArm', 'mixamorigLeftShoulder', [0.10, 0, 0]],
+  ['mixamorigLeftForeArm', 'mixamorigLeftArm', [0.15, 0, 0]],
+  ['mixamorigLeftHand', 'mixamorigLeftForeArm', [0.13, 0, 0]],
+  ['mixamorigRightShoulder', 'mixamorigSpine1', [-0.045, 0.07, 0]],
+  ['mixamorigRightArm', 'mixamorigRightShoulder', [-0.10, 0, 0]],
+  ['mixamorigRightForeArm', 'mixamorigRightArm', [-0.15, 0, 0]],
+  ['mixamorigRightHand', 'mixamorigRightForeArm', [-0.13, 0, 0]],
+  ['mixamorigLeftUpLeg', 'mixamorigHips', [0.06, -0.03, 0]],
+  ['mixamorigLeftLeg', 'mixamorigLeftUpLeg', [0, -0.20, 0]],
+  ['mixamorigLeftFoot', 'mixamorigLeftLeg', [0, -0.19, 0]],
+  ['mixamorigRightUpLeg', 'mixamorigHips', [-0.06, -0.03, 0]],
+  ['mixamorigRightLeg', 'mixamorigRightUpLeg', [0, -0.20, 0]],
+  ['mixamorigRightFoot', 'mixamorigRightLeg', [0, -0.19, 0]],
+];
+
+function qMul(a, b) {   // Hamilton product (x,y,z,w)
+  return [
+    a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1],
+    a[3]*b[1] - a[0]*b[2] + a[1]*b[3] + a[2]*b[0],
+    a[3]*b[2] + a[0]*b[1] - a[1]*b[0] + a[2]*b[3],
+    a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2],
+  ];
+}
+function qRot(q, v) {    // rotate vec3 by quaternion
+  const [x, y, z, w] = q, [vx, vy, vz] = v;
+  const tx = 2*(y*vz - z*vy), ty = 2*(z*vx - x*vz), tz = 2*(x*vy - y*vx);
+  return [vx + w*tx + (y*tz - z*ty), vy + w*ty + (z*tx - x*tz), vz + w*tz + (x*ty - y*tx)];
+}
+function qNlerp(a, b, t) {
+  let d = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+  const s = d < 0 ? -1 : 1;
+  const r = [a[0] + (b[0]*s - a[0])*t, a[1] + (b[1]*s - a[1])*t, a[2] + (b[2]*s - a[2])*t, a[3] + (b[3]*s - a[3])*t];
+  const m = Math.hypot(r[0], r[1], r[2], r[3]) || 1;
+  return [r[0]/m, r[1]/m, r[2]/m, r[3]/m];
+}
+// Sample a quaternion track at time t (track.times sorted; values flat [x,y,z,w]*).
+function sampleTrack(track, t) {
+  const times = track.times, vals = track.values;
+  if (!times || !times.length) return [0, 0, 0, 1];
+  if (t <= times[0]) return vals.slice(0, 4);
+  const last = times.length - 1;
+  if (t >= times[last]) return vals.slice(last*4, last*4 + 4);
+  let i = 0; while (i < last && times[i+1] < t) i++;
+  const t0 = times[i], t1 = times[i+1];
+  const f = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+  return qNlerp(vals.slice(i*4, i*4 + 4), vals.slice((i+1)*4, (i+1)*4 + 4), f);
+}
+
+const _previewCache = new Map();   // id → pack data (or null while loading / on error)
+async function fetchPreview(id) {
+  if (_previewCache.has(id)) return _previewCache.get(id);
+  _previewCache.set(id, null);
+  try {
+    const r = await fetch(`${API}/animations/${id}/preview`);
+    if (r.ok) { const d = await r.json(); _previewCache.set(id, d); return d; }
+  } catch {}
+  return null;
+}
+
+function drawSkeleton(ctx, clip, time, W, H) {
+  // Build a name→track map once per clip (cached on the clip object).
+  if (!clip._byBone) {
+    clip._byBone = {};
+    for (const tr of (clip.tracks || [])) {
+      const bone = String(tr.name).split('.')[0];
+      if (String(tr.name).endsWith('.quaternion')) clip._byBone[bone] = tr;
+    }
+  }
+  const nodes = {};
+  for (const [bone, parent, off] of SKELETON) {
+    const tr = clip._byBone[bone];
+    const local = tr ? sampleTrack(tr, time) : [0, 0, 0, 1];
+    if (!parent) { nodes[bone] = { wq: local, wp: [0, 0, 0] }; continue; }
+    const p = nodes[parent];
+    nodes[bone] = { wq: qMul(p.wq, local), wp: addV(p.wp, qRot(p.wq, off)) };
+  }
+  const S = H * 0.62, cx = W / 2, cy = H * 0.60;
+  const px = (p) => [cx + p[0] * S, cy - p[1] * S];
+  ctx.clearRect(0, 0, W, H);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#a5b4fc'; ctx.lineWidth = Math.max(2, H * 0.022);
+  for (const [bone, parent] of SKELETON) {
+    if (!parent) continue;
+    const a = px(nodes[parent].wp), b = px(nodes[bone].wp);
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  }
+  // head
+  const hp = px(nodes['mixamorigHead'].wp);
+  ctx.fillStyle = '#c4b5fd';
+  ctx.beginPath(); ctx.arc(hp[0], hp[1] - H * 0.02, H * 0.055, 0, Math.PI * 2); ctx.fill();
+  // joints
+  ctx.fillStyle = '#8b5cf6';
+  for (const [bone] of SKELETON) { const p = px(nodes[bone].wp); ctx.beginPath(); ctx.arc(p[0], p[1], H * 0.014, 0, Math.PI * 2); ctx.fill(); }
+}
+function addV(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+
+function attachAnimPreview(card, id) {
+  const canvas = card.querySelector('.anim-canvas');
+  const emoji = card.querySelector('.anim-emoji');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let raf = null, start = 0, clip = null;
+  const loop = (now) => {
+    if (!clip) return;
+    const dur = clip.duration || 2;
+    const t = ((now - start) / 1000) % dur;
+    drawSkeleton(ctx, clip, t, canvas.width, canvas.height);
+    raf = requestAnimationFrame(loop);
+  };
+  card.addEventListener('mouseenter', async () => {
+    const data = await fetchPreview(id);
+    const c = data && Array.isArray(data.animations) && data.animations[0];
+    if (!c) return;   // no data → keep the emoji
+    clip = c;
+    canvas.classList.add('show'); if (emoji) emoji.style.opacity = '0';
+    start = performance.now();
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
+  });
+  card.addEventListener('mouseleave', () => {
+    cancelAnimationFrame(raf); raf = null;
+    canvas.classList.remove('show'); if (emoji) emoji.style.opacity = '';
   });
 }
 
@@ -152,10 +306,26 @@ window.downloadItem = (id, encodedName) => {
   const name = decodeURIComponent(encodedName);
   const item = allItems.find(x => x.id === id);
   if (!item) return;
-  if (item.price > 0) { alert(`"${name}" costs $${item.price.toFixed(2)}.\n\nPaid items aren't enabled yet — DeskBuddy is launching free first.`); return; }
-  doInstall(contentType === 'animations' ? 'animation' : 'character', id, name);
+  const type = contentType === 'animations' ? 'animation' : 'character';
+  if (item.price > 0) {
+    if (!confirm(`Purchase “${name}” for $${item.price.toFixed(2)}?\n\nDeskBuddy is in free preview — there's no real charge. This unlocks the item and installs it into the app.`)) return;
+    purchaseThenInstall(type, id, name);
+  } else {
+    doInstall(type, id, name);
+  }
 };
 window.installOwned = (type, id, enc) => doInstall(type, id, decodeURIComponent(enc));
+
+// Record the sale, then install. Ownership persists so it stays in My Library and can
+// be re-installed without paying again.
+async function purchaseThenInstall(type, id, name) {
+  const endpoint = type === 'animation' ? 'animations' : 'characters';
+  try {
+    const r = await fetch(`${API}/${endpoint}/${id}/purchase`, { method: 'POST', headers: authHeaders() });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `HTTP ${r.status}`); }
+  } catch (err) { alert('Purchase error: ' + err.message); return; }
+  doInstall(type, id, name);
+}
 
 // Download from the server and install straight into the app (no manual folder
 // juggling): characters → your library, animation packs → the global anim library.
@@ -182,7 +352,7 @@ async function doInstall(type, id, name) {
   } catch (err) { alert('Install error: ' + err.message); }
 }
 
-async function renderLibrary() {
+async function renderMyLibrary() {
   const grid = $('card-grid'); grid.innerHTML = '';
   let owned = [];
   try { owned = await (await fetch(`${API}/me/library`, { headers: authHeaders() })).json(); } catch {}
@@ -258,6 +428,7 @@ async function loadLibrary() {
     library = [
       ...chars.map(c => ({ kind: 'character', name: c.name || c.filename, filename: c.filename, path: c.path,
         mtime: c.mtime || 0, description: c.manifest?.description || '', tags: c.manifest?.tags || [],
+        thumbnail: c.manifest?.thumbnail || '',
         meta: ((c.manifest?.animationCount ?? c.manifest?.importedClips?.length) ? `${c.manifest.animationCount ?? c.manifest.importedClips.length} clips` : (c.filename.split('.').pop() || '').toUpperCase()) })),
       ...anims.map(a => ({ kind: 'animation', name: a.name || a.filename, filename: a.filename, path: a.path,
         mtime: a.mtime || 0, description: a.description || '', tags: a.tags || [],
@@ -280,11 +451,13 @@ window.renderLibrary = () => {
   if (!items.length) { box.innerHTML = '<div class="up-empty">Nothing in your studio yet. Create or import a character first.</div>'; updateUpCount(); return; }
   box.innerHTML = items.map(it => {
     const checked = librarySelection.has(it.path) ? 'checked' : '';
-    const ic = it.kind === 'animation' ? '🎞️' : '🧍';
+    const ic = it.thumbnail
+      ? `<img class="up-thumb" src="${escapeHtml(it.thumbnail)}" alt="">`
+      : `<span class="up-ic">${it.kind === 'animation' ? '🎞️' : '🧍'}</span>`;
     const badge = it.kind === 'animation' ? '<span class="up-badge anim">Animation</span>' : '<span class="up-badge">Character</span>';
     return `<label class="up-item">
       <input type="checkbox" data-path="${encodeURIComponent(it.path)}" ${checked} onchange="toggleLibraryItem(this)">
-      <span class="up-ic">${ic}</span>
+      ${ic}
       <span class="up-name">${escapeHtml(it.name)}</span>
       ${badge}
       <span class="up-meta">${escapeHtml(it.meta || '')}</span>
@@ -332,6 +505,7 @@ window.submitUpload = async () => {
       fd.append('tags', JSON.stringify(it.tags || []));
       fd.append('price', price);
       if (it.kind === 'animation') fd.append('clipCount', String(it.clipCount || 0));
+      if (it.kind === 'character' && it.thumbnail) fd.append('thumbnail', it.thumbnail);   // rendered model image
       fd.append('file', new Blob([buf]), it.filename);
       const res = await fetch(`${API}/${endpoint}`, { method: 'POST', headers: authHeaders(), body: fd });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `HTTP ${res.status}`); }
