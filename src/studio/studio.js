@@ -2254,8 +2254,165 @@ function sceneEditorOnShow() {
   drawStage();
 }
 
+// ── Account gate (shared app login) ─────────────────────────────────────────────
+// Studio requires a sign-in; the session is shared with the marketplace via the main
+// process. The library export stamps this account so it's linked to your login.
+let _authMode = 'login', _me = null;
+const _gel = (id) => document.getElementById(id);
+function refreshAuthChip() {
+  const chip = _gel('acct-chip');
+  if (chip) chip.style.display = _me ? '' : 'none';
+  const n = _gel('acct-name'); if (n) n.textContent = _me?.username || '';
+}
+window.studioAuthToggle = () => {
+  _authMode = _authMode === 'login' ? 'signup' : 'login';
+  const signup = _authMode === 'signup';
+  _gel('sauth-title').textContent      = signup ? 'Create account' : 'Sign in';
+  _gel('sauth-btn').textContent        = signup ? 'Create account' : 'Sign in';
+  _gel('sauth-switch-txt').textContent = signup ? 'Already have one?' : 'No account?';
+  _gel('sauth-switch-lbl').textContent = signup ? 'Sign in' : 'Create one';
+  _gel('sauth-email').style.display    = signup ? '' : 'none';   // email only on signup
+  _gel('sauth-forgot').style.display   = signup ? 'none' : '';   // forgot only on login
+  _gel('sauth-err').textContent = '';
+};
+window.studioAuthSubmit = async () => {
+  const username = _gel('sauth-user').value.trim(), password = _gel('sauth-pass').value;
+  const email = _gel('sauth-email').value.trim();
+  if (!username || !password) { _gel('sauth-err').textContent = 'Enter a username and password'; return; }
+  const signing = _authMode === 'signup';
+  const fn = signing ? window.deskbuddy.authSignup : window.deskbuddy.authLogin;
+  let r; try { r = await fn({ username, password, email }); } catch { r = { ok: false, error: 'Cannot reach the server' }; }
+  if (!r?.ok) { _gel('sauth-err').textContent = r?.error || 'Failed'; return; }
+  _me = r.user; _gel('sauth-pass').value = ''; _gel('sauth-err').textContent = '';
+  refreshAuthChip();
+  // On sign-up, reveal the one-time recovery code first; the gate closes after they save it.
+  if (signing && r.recoveryCode) showRecoveryModal(r.recoveryCode);
+  else _gel('studio-auth-gate').style.display = 'none';
+};
+window.studioLogout = async () => {
+  try { await window.deskbuddy.authLogout(); } catch {}
+  _me = null; refreshAuthChip();
+  studioHideReset();
+  _gel('studio-auth-gate').style.display = 'flex';
+};
+
+// ── Recovery-code reveal + the emotional (and emotionally manipulative) note ──────
+const RECOVERY_NOTE =
+`Look at it. Really look at it. Those sixteen little characters are the only thread tethering you to everything you're about to make — every model you'll lovingly rig at 3am, every scene, every animation you swore you'd "redo properly later." All of it. Dangling by that string.
+
+Lose it, and we won't fight. We won't argue. I will simply… forget you. Coldly. Completely. As if we never shared a single render. You'll stand right back at this login screen typing passwords that used to work, and I'll stare back with the warm, recognizing eyes of a brick.
+
+So tuck it away. A password manager. A sticky note. A tasteful tattoo. I'm not picky — I'm just devastatingly permanent.
+
+Because the day you lose it is the day your whole library becomes a beautiful little ghost story… and you become the tragic narrator who "definitely saved it somewhere."
+
+Don't be that narrator. 🥲`;
+
+function showRecoveryModal(code) {
+  _gel('rec-code').textContent = code;
+  _gel('rec-step1').style.display = 'flex';
+  _gel('rec-step2').style.display = 'none';
+  _gel('rec-agree').checked = false;
+  _gel('rec-agree-btn').disabled = true;
+  _gel('rec-modal').style.display = 'flex';
+}
+window.recCopy = () => {
+  try { navigator.clipboard.writeText(_gel('rec-code').textContent); setStatus('Recovery code copied'); } catch {}
+};
+window.recAgree = () => {
+  const note = _gel('rec-note'); note.style.whiteSpace = 'pre-line'; note.textContent = RECOVERY_NOTE;
+  _gel('rec-step1').style.display = 'none';
+  _gel('rec-step2').style.display = 'flex';
+};
+window.recClose = () => {
+  _gel('rec-modal').style.display = 'none';
+  _gel('studio-auth-gate').style.display = 'none';   // recovery saved → enter the studio
+};
+
+// ── Reset password (recovery-code path works offline; email path is dev-surfaced now) ──
+let _resetDevToken = null;
+window.studioShowReset = () => {
+  _gel('sauth-card').style.display = 'none';
+  _gel('sauth-reset').style.display = 'flex';
+  _gel('srx-err').textContent = '';
+  _gel('srx-devlink').style.display = 'none'; _resetDevToken = null;
+  studioResetMode('code');
+};
+window.studioHideReset = () => {
+  const rx = _gel('sauth-reset'); if (rx) rx.style.display = 'none';
+  const c = _gel('sauth-card'); if (c) c.style.display = 'flex';
+};
+window.studioResetMode = (mode) => {
+  const code = mode === 'code';
+  _gel('srx-pane-code').style.display  = code ? 'flex' : 'none';
+  _gel('srx-pane-email').style.display = code ? 'none' : 'flex';
+  _gel('srx-tab-code').style.opacity   = code ? '1' : '.55';
+  _gel('srx-tab-email').style.opacity  = code ? '.55' : '1';
+  _gel('srx-err').textContent = '';
+};
+function _rxErr(msg, muted) { const e = _gel('srx-err'); e.style.color = muted ? 'var(--muted,#8b93a7)' : '#ff6b6b'; e.textContent = msg; }
+window.studioResetWithCode = async () => {
+  const username = _gel('srx-user').value.trim();
+  const code = _gel('srx-code').value.trim();
+  const password = _gel('srx-newpass-code').value;
+  if (!username || !code || !password) { _rxErr('Fill in all three fields'); return; }
+  let r; try { r = await window.deskbuddy.authResetCode({ username, code, password }); } catch { r = { ok: false, error: 'Cannot reach the server' }; }
+  if (!r?.ok) { _rxErr(r?.error || 'Reset failed'); return; }
+  studioHideReset();
+  setStatus('Password reset — sign in with your new password.');
+  if (r.recoveryCode) showRecoveryModal(r.recoveryCode);   // single-use → here's a fresh one
+};
+window.studioResetSendLink = async () => {
+  const email = _gel('srx-email').value.trim();
+  if (!email) { _rxErr('Enter your email'); return; }
+  let r; try { r = await window.deskbuddy.authForgot({ email }); } catch { r = { ok: false }; }
+  if (r?.devToken) {
+    _resetDevToken = r.devToken;
+    _gel('srx-devlink').style.display = 'flex';
+    _rxErr('Dev link generated — set a new password below.', true);
+  } else {
+    _gel('srx-devlink').style.display = 'none';
+    _rxErr('If that email is registered, a reset link is on its way.', true);
+  }
+};
+window.studioResetWithToken = async () => {
+  const password = _gel('srx-newpass-email').value;
+  if (!_resetDevToken) { _rxErr('Request a link first'); return; }
+  if (!password) { _rxErr('Enter a new password'); return; }
+  let r; try { r = await window.deskbuddy.authReset({ token: _resetDevToken, password }); } catch { r = { ok: false, error: 'Cannot reach the server' }; }
+  if (!r?.ok) { _rxErr(r?.error || 'Reset failed'); return; }
+  _resetDevToken = null;
+  studioHideReset();
+  setStatus('Password reset — sign in with your new password.');
+};
+async function ensureAuth() {
+  try { const s = await window.deskbuddy.authState(); _me = s?.user || null; } catch { _me = null; }
+  _gel('studio-auth-gate').style.display = _me ? 'none' : 'flex';
+  refreshAuthChip();
+}
+
+// ── Whole-library export / import ────────────────────────────────────────────────
+window.exportLibrary = async () => {
+  setStatus('Choose a destination folder…');
+  let r; try { r = await window.deskbuddy.exportLibrary(); } catch (e) { setStatus('Export failed: ' + e.message); return; }
+  if (r?.canceled) { setStatus('Export canceled'); return; }
+  if (!r?.ok) { setStatus('Export failed: ' + (r?.error || 'unknown error')); return; }
+  const c = r.counts || {};
+  setStatus(`Exported ${c.characters || 0} characters, ${c.animations || 0} animations, ${c.scenes || 0} scenes → ${r.path}`);
+};
+window.importLibrary = async () => {
+  setStatus('Choose a DeskBuddyLibrary folder…');
+  let r; try { r = await window.deskbuddy.importLibrary(); } catch (e) { setStatus('Import failed: ' + e.message); return; }
+  if (r?.canceled) { setStatus('Import canceled'); return; }
+  if (!r?.ok) { setStatus('Import failed: ' + (r?.error || 'unknown error')); return; }
+  const c = r.counts || {};
+  setStatus(`Imported (${r.mode}) ${c.characters || 0} characters, ${c.animations || 0} animations, ${c.scenes || 0} scenes`);
+  await loadCharList(); refreshAnimLibrary();
+};
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
+  await ensureAuth();          // must sign in before using Studio
   await loadCharList();
   refreshAnimLibrary();
   attachPrecisionInputs();

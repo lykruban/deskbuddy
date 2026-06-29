@@ -191,8 +191,87 @@
     <span class="sub">Character Creator</span>
     <div class="spacer"></div>
     <button class="btn btn-secondary" onclick="importCharacter()">Import Model</button>
+    <button class="btn btn-secondary" onclick="exportLibrary()" title="Export your whole library (characters, animations, scenes) to a folder you can copy to another PC">⬆ Export Library</button>
+    <button class="btn btn-secondary" onclick="importLibrary()" title="Import a DeskBuddyLibrary folder from another PC">⬇ Import Library</button>
+    <button id="acct-chip" class="btn btn-secondary" onclick="studioLogout()" title="Sign out" style="display:none">👤 <span id="acct-name"></span></button>
     <button class="btn btn-primary" id="save-btn" onclick="saveCharpack()" disabled>Save & Activate</button>
   </header>
+
+  <!-- Login gate: you must sign in to use Character Studio (library is linked to your account) -->
+  <div id="studio-auth-gate" style="position:fixed;inset:0;background:var(--bg,#0f1115);z-index:500;display:none;align-items:center;justify-content:center;">
+    <!-- Sign in / create account -->
+    <div id="sauth-card" style="width:330px;max-width:90vw;background:var(--surface,#1a1d24);border:1px solid var(--border,#2a2f3a);border-radius:14px;padding:26px;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+      <div style="font-size:34px;text-align:center">🐾</div>
+      <h2 id="sauth-title" style="text-align:center;margin:0;font-size:18px">Sign in</h2>
+      <div style="color:var(--muted,#8b93a7);font-size:12px;text-align:center;line-height:1.5">Sign in to use Character Studio. Your library stays linked to your account so you can take it anywhere.</div>
+      <input id="sauth-user" type="text" placeholder="Username" autocomplete="username" style="padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px">
+      <input id="sauth-email" type="email" placeholder="Email (for password reset)" autocomplete="email" style="display:none;padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px">
+      <input id="sauth-pass" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')studioAuthSubmit()" style="padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px">
+      <div id="sauth-err" style="color:#ff6b6b;font-size:12px;min-height:14px"></div>
+      <button class="btn btn-primary" id="sauth-btn" style="padding:11px" onclick="studioAuthSubmit()">Sign in</button>
+      <div id="sauth-forgot" style="text-align:center;font-size:12px;color:var(--muted,#8b93a7);cursor:pointer" onclick="studioShowReset()">Forgot password?</div>
+      <div style="text-align:center;font-size:12px;color:var(--muted,#8b93a7);cursor:pointer" onclick="studioAuthToggle()"><span id="sauth-switch-txt">No account?</span> <b id="sauth-switch-lbl">Create one</b></div>
+    </div>
+
+    <!-- Reset password (hidden until "Forgot password?") -->
+    <div id="sauth-reset" style="display:none;width:340px;max-width:90vw;background:var(--surface,#1a1d24);border:1px solid var(--border,#2a2f3a);border-radius:14px;padding:26px;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+      <h2 style="text-align:center;margin:0;font-size:18px">Reset password</h2>
+      <div style="display:flex;gap:6px;justify-content:center">
+        <button id="srx-tab-code" class="btn btn-secondary" style="flex:1;font-size:12px" onclick="studioResetMode('code')">Recovery code</button>
+        <button id="srx-tab-email" class="btn btn-secondary" style="flex:1;font-size:12px" onclick="studioResetMode('email')">Email link</button>
+      </div>
+
+      <!-- Recovery-code path (works offline) -->
+      <div id="srx-pane-code" style="display:flex;flex-direction:column;gap:10px">
+        <div style="color:var(--muted,#8b93a7);font-size:12px;text-align:center;line-height:1.5">Enter your username and the recovery code you saved at sign-up.</div>
+        <input id="srx-user" type="text" placeholder="Username" style="padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px">
+        <input id="srx-code" type="text" placeholder="Recovery code (XXXX-XXXX-XXXX-XXXX)" style="padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px;letter-spacing:.5px">
+        <input id="srx-newpass-code" type="password" placeholder="New password" style="padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px">
+        <button class="btn btn-primary" style="padding:11px" onclick="studioResetWithCode()">Set new password</button>
+      </div>
+
+      <!-- Email-link path (live once the server is deployed; dev shows the link) -->
+      <div id="srx-pane-email" style="display:none;flex-direction:column;gap:10px">
+        <div style="color:var(--muted,#8b93a7);font-size:12px;text-align:center;line-height:1.5">We'll send a reset link to your email. <span style="opacity:.7">(Real emails arrive once the DeskBuddy server is live; for now the link appears below.)</span></div>
+        <input id="srx-email" type="email" placeholder="Email" style="padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px">
+        <button class="btn btn-primary" style="padding:11px" onclick="studioResetSendLink()">Send reset link</button>
+        <div id="srx-devlink" style="display:none;flex-direction:column;gap:8px;border-top:1px solid var(--border,#2a2f3a);padding-top:10px">
+          <div style="font-size:11px;color:var(--muted,#8b93a7)">Dev link generated — paste a new password:</div>
+          <input id="srx-newpass-email" type="password" placeholder="New password" style="padding:10px;border-radius:8px;border:1px solid var(--border,#2a2f3a);background:var(--bg,#0f1115);color:inherit;font-size:13px">
+          <button class="btn btn-primary" style="padding:10px" onclick="studioResetWithToken()">Set new password</button>
+        </div>
+      </div>
+
+      <div id="srx-err" style="color:#ff6b6b;font-size:12px;min-height:14px;text-align:center"></div>
+      <div style="text-align:center;font-size:12px;color:var(--muted,#8b93a7);cursor:pointer" onclick="studioHideReset()">← Back to sign in</div>
+    </div>
+  </div>
+
+  <!-- Recovery-code reveal (after sign-up): disclaimer → agree → the emotional note -->
+  <div id="rec-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:600;display:none;align-items:center;justify-content:center;">
+    <div style="width:420px;max-width:92vw;background:var(--surface,#1a1d24);border:1px solid var(--border,#2a2f3a);border-radius:14px;padding:26px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+      <!-- Step 1: the code + disclaimer -->
+      <div id="rec-step1" style="display:flex;flex-direction:column;gap:14px">
+        <div style="font-size:30px;text-align:center">🔑</div>
+        <h2 style="text-align:center;margin:0;font-size:18px">Your recovery code</h2>
+        <div style="color:var(--muted,#8b93a7);font-size:13px;text-align:center;line-height:1.55">This is the <b>only</b> way to get back into your account if you forget your password and email isn't set up. We can't recover it for you — write it down somewhere safe.</div>
+        <div id="rec-code" style="font-family:monospace;font-size:20px;letter-spacing:2px;text-align:center;background:var(--bg,#0f1115);border:1px dashed var(--border,#2a2f3a);border-radius:10px;padding:14px;user-select:all"></div>
+        <button class="btn btn-secondary" style="font-size:12px" onclick="recCopy()">📋 Copy code</button>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted,#8b93a7);cursor:pointer">
+          <input type="checkbox" id="rec-agree" onchange="document.getElementById('rec-agree-btn').disabled=!this.checked" style="margin-top:2px">
+          <span>I have saved my recovery code somewhere safe. I understand it won't be shown again.</span>
+        </label>
+        <button class="btn btn-primary" id="rec-agree-btn" style="padding:11px" disabled onclick="recAgree()">I've saved it — continue</button>
+      </div>
+      <!-- Step 2: the emotional, sarcastic ode -->
+      <div id="rec-step2" style="display:none;flex-direction:column;gap:14px">
+        <div style="font-size:30px;text-align:center">💔🔑</div>
+        <h2 style="text-align:center;margin:0;font-size:17px">An ode to the code you swore to keep</h2>
+        <div id="rec-note" style="color:var(--text,#e6e9f0);font-size:13px;line-height:1.65;background:var(--bg,#0f1115);border:1px solid var(--border,#2a2f3a);border-radius:10px;padding:16px"></div>
+        <button class="btn btn-primary" style="padding:11px" onclick="recClose()">I will guard it with my life 🫡</button>
+      </div>
+    </div>
+  </div>
 
   <div class="layout">
     <!-- Sidebar -->
