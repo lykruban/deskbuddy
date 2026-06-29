@@ -8,6 +8,22 @@ const { init, store, users, publicUser } = require('./store');
 const PORT = 4242;
 let serverInstance = null;
 
+// ── Password-reset email ────────────────────────────────────────────────────────
+// Base URL the reset link points at (the deployed server's public URL). Dev mode (no
+// NODE_ENV=production) surfaces the reset link in the API response so it's testable
+// without an email provider. On the deployed server set NODE_ENV=production and either
+// SMTP_URL or SENDGRID_API_KEY, then implement the real send below.
+const RESET_URL_BASE = process.env.RESET_URL_BASE || `http://localhost:${PORT}`;
+const DEV_SURFACE    = process.env.NODE_ENV !== 'production';
+async function sendResetEmail(to, link) {
+  if (!process.env.SMTP_URL && !process.env.SENDGRID_API_KEY) {
+    console.log('[DeskBuddy] (dev) password-reset link for', to, '->', link);
+    return false;   // no provider configured → caller falls back to the dev-surfaced link
+  }
+  // TODO (deploy): send a real email via the configured provider (nodemailer/SendGrid).
+  return false;
+}
+
 function startServer(dataDir) {
   if (serverInstance) return Promise.resolve(PORT);
 
@@ -41,11 +57,12 @@ function startServer(dataDir) {
   app.use(auth);
 
   app.post('/api/auth/signup', (req, res) => {
-    const { username, password } = req.body || {};
-    const r = users.create(username, password);
+    const { username, password, email } = req.body || {};
+    const r = users.create(username, password, email);
     if (r.error) return res.status(400).json({ error: r.error });
     const token = users.createSession(r.user.id);
-    res.status(201).json({ token, user: publicUser(r.user) });
+    // recoveryCode is plaintext, returned ONCE — the client shows it to save.
+    res.status(201).json({ token, user: publicUser(r.user), recoveryCode: r.recoveryCode });
   });
   app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body || {};
@@ -54,6 +71,41 @@ function startServer(dataDir) {
     res.json({ token: users.createSession(u.id), user: publicUser(u) });
   });
   app.post('/api/auth/logout', (req, res) => { users.logout(req.token); res.json({ ok: true }); });
+
+  // ── Password recovery ─────────────────────────────────────────────────────────
+  // Email path: request a reset link, then reset with the token. Always responds 200 to
+  // /forgot so it can't be used to discover which emails are registered. Until an email
+  // provider is configured (on the deployed server), DEV mode surfaces the link in the
+  // response so the flow is testable locally.
+  app.post('/api/auth/forgot', async (req, res) => {
+    const { email } = req.body || {};
+    const r = users.createResetToken(email);
+    if (r) {
+      const link = `${RESET_URL_BASE}/reset?token=${r.token}`;
+      const sent = await sendResetEmail(r.user.email, link).catch(() => false);
+      if (!sent && DEV_SURFACE) return res.json({ ok: true, devToken: r.token, devLink: link });
+    }
+    res.json({ ok: true });
+  });
+  app.post('/api/auth/reset', (req, res) => {
+    const { token, password } = req.body || {};
+    const user = users.consumeResetToken(token);
+    if (!user) return res.status(400).json({ error: 'That reset link is invalid or expired' });
+    const r = users.setPassword(user.id, password);
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ ok: true });
+  });
+  // Offline path: username + one-time recovery code → set a new password. Issues a fresh
+  // recovery code (codes are single-use) which the client shows to save again.
+  app.post('/api/auth/reset-code', (req, res) => {
+    const { username, code, password } = req.body || {};
+    const user = users.verifyRecoveryCode(username, code);
+    if (!user) return res.status(400).json({ error: 'Wrong username or recovery code' });
+    const r = users.setPassword(user.id, password);
+    if (r.error) return res.status(400).json({ error: r.error });
+    const recoveryCode = users.regenerateRecoveryCode(user.id);
+    res.json({ ok: true, recoveryCode });
+  });
   app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
   app.get('/api/me/library', requireAuth, (req, res) => res.json(req.user.owned || []));
 
