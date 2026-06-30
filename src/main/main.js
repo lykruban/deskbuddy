@@ -139,6 +139,8 @@ function trayTemplate() {
   const sendCmd = (a) => overlayWindow?.webContents.send('menu-command', a);
   const scenes = listScenesSync();
   return [
+    { label: notifUnread > 0 ? `📬 Messages (${notifUnread})` : '📬 Messages', click: openStudioNotifications },
+    { type: 'separator' },
     { label: 'Show Buddy',       click: () => overlayWindow?.show() },
     { label: 'Hide Buddy',       click: () => overlayWindow?.hide() },
     { type: 'separator' },
@@ -674,6 +676,83 @@ ipcMain.handle('import-library', async () => {
   refreshTray();   // newly imported scenes should appear in the tray Scene list
   return { ok: true, mode: replace ? 'replace' : 'merge', counts };
 });
+
+// ── IPC: in-app notifications / update messages ─────────────────────────────────
+// A permanent, per-account message inbox. Messages are NEVER deleted. Two sources:
+//  • a one-time personalised WELCOME on a user's first login, and
+//  • dev ANNOUNCEMENTS pulled from the trusted server (SERVER_BASE) — so they can't be
+//    injected locally; on the deployed server these can be signed for authenticity.
+const NOTIF_FILE = path.join(app.getPath('userData'), 'notifications.json');
+const DOT_ICON   = path.join(__dirname, '../../assets/icons/dot.png');
+let notifUnread = 0;   // cached so the (synchronous) tray menu can show the count
+
+function loadNotif() { try { return JSON.parse(fs.readFileSync(NOTIF_FILE, 'utf8')); } catch { return { users: {} }; } }
+function saveNotif(d) { try { fs.writeFileSync(NOTIF_FILE, JSON.stringify(d, null, 2)); } catch {} }
+function welcomeMessage(username) {
+  return {
+    id: 'welcome', kind: 'welcome', title: `Welcome to DeskBuddy, ${username}! 🐾`,
+    body: `Hey ${username} — so glad you're here. This is your message inbox: app updates, new features, and announcements land here, and nothing ever gets removed. Now go make a buddy, build a scene, and have fun. 💜`,
+    link: '', ts: Date.now(), read: false,
+  };
+}
+// Ensure the signed-in account has its welcome + any new dev announcements, recompute the
+// unread badge, and return the account's messages (newest first). No-op if not signed in.
+async function syncNotifications() {
+  const user = await currentAccount();
+  if (!user) { notifUnread = 0; updateNotifBadges(); return []; }
+  const d = loadNotif(); d.users = d.users || {};
+  const rec = d.users[user.id] || (d.users[user.id] = { welcomed: false, seen: [], messages: [] });
+  let changed = false;
+  if (!rec.welcomed) { rec.messages.push(welcomeMessage(user.username)); rec.welcomed = true; changed = true; }
+  try {
+    const r = await authFetch('/announcements');
+    const anns = (r.ok && Array.isArray(r.data)) ? r.data : [];
+    for (const a of anns) {
+      if (!a || a.id == null) continue;
+      const aid = String(a.id);
+      if (rec.seen.includes(aid)) continue;
+      rec.seen.push(aid);
+      rec.messages.push({ id: 'ann:' + aid, kind: 'update', title: a.title || 'Update',
+        body: a.body || '', link: a.link || '', ts: a.ts || Date.now(), read: false });
+      changed = true;
+    }
+  } catch {}
+  if (changed) saveNotif(d);
+  notifUnread = rec.messages.filter(m => !m.read).length;
+  updateNotifBadges();
+  return rec.messages.slice().sort((a, b) => b.ts - a.ts);
+}
+function updateNotifBadges() {
+  // Taskbar (Windows): a red dot overlay on the Studio window's taskbar button.
+  if (studioWindow && !studioWindow.isDestroyed()) {
+    try {
+      if (notifUnread > 0 && fs.existsSync(DOT_ICON)) studioWindow.setOverlayIcon(nativeImage.createFromPath(DOT_ICON), `${notifUnread} new messages`);
+      else studioWindow.setOverlayIcon(null, '');
+    } catch {}
+  }
+  if (tray) tray.setToolTip(notifUnread > 0 ? `DeskBuddy · ${notifUnread} new message${notifUnread > 1 ? 's' : ''}` : 'DeskBuddy');
+  refreshTray();
+  studioWindow?.webContents.send('notifications-changed');
+}
+ipcMain.handle('notif-sync',   () => syncNotifications());
+ipcMain.handle('notif-unread', () => notifUnread);
+ipcMain.handle('notif-mark-read', async (_, ids) => {
+  const user = await currentAccount(); if (!user) return { ok: true };
+  const d = loadNotif(); const rec = d.users?.[user.id]; if (!rec) return { ok: true };
+  const set = Array.isArray(ids) && ids.length ? new Set(ids.map(String)) : null;   // null → mark all
+  for (const m of rec.messages) if (!set || set.has(String(m.id))) m.read = true;
+  saveNotif(d);
+  notifUnread = rec.messages.filter(m => !m.read).length;
+  updateNotifBadges();
+  return { ok: true, unread: notifUnread };
+});
+function openStudioNotifications() {
+  const existed = !!studioWindow;
+  createStudioWindow();
+  const send = () => studioWindow?.webContents.send('studio-cmd', 'open-notifications');
+  if (existed) { studioWindow.focus(); send(); }
+  else studioWindow.webContents.once('did-finish-load', send);
+}
 
 // ── IPC: scenes (.scenepack) ───────────────────────────────────────────────────
 ipcMain.handle('list-scenes', () => listScenesSync());
@@ -1312,6 +1391,7 @@ app.whenReady().then(async () => {
   try { await startServer(app.getPath('userData')); } catch (e) { console.error('Server:', e.message); }
   createOverlayWindow();
   createTray();
+  syncNotifications().catch(() => {});   // welcome + dev announcements; sets the tray badge
   app.on('activate', () => { if (!overlayWindow) createOverlayWindow(); });
 });
 

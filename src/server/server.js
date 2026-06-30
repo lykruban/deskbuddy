@@ -106,6 +106,20 @@ function startServer(dataDir) {
     const recoveryCode = users.regenerateRecoveryCode(user.id);
     res.json({ ok: true, recoveryCode });
   });
+
+  // ── Dev announcements (in-app notification feed) ──────────────────────────────
+  // The developer pushes update messages by editing/deploying announcements.json. The
+  // app only trusts THIS server, so notifications can't be injected locally. Each item:
+  // { id, title, body, link?, ts? }. On the deployed server, sign the payload so the
+  // client can verify it's genuinely from us. Returns [] if none.
+  app.get('/api/announcements', (_req, res) => {
+    try {
+      const f = path.join(dataDir, 'announcements.json');
+      if (!fs.existsSync(f)) return res.json([]);
+      const data = JSON.parse(fs.readFileSync(f, 'utf8'));
+      res.json(Array.isArray(data) ? data : (data.announcements || []));
+    } catch { res.json([]); }
+  });
   app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
   app.get('/api/me/library', requireAuth, (req, res) => res.json(req.user.owned || []));
 

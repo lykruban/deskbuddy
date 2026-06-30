@@ -19,6 +19,13 @@ contextBridge.exposeInMainWorld('deskbuddy', {
   exportLibrary:  ()  => ipcRenderer.invoke('export-library'),
   importLibrary:  ()  => ipcRenderer.invoke('import-library'),
 
+  // In-app notifications / update messages (permanent inbox)
+  notifSync:      ()    => ipcRenderer.invoke('notif-sync'),
+  notifUnread:    ()    => ipcRenderer.invoke('notif-unread'),
+  notifMarkRead:  (ids) => ipcRenderer.invoke('notif-mark-read', ids),
+  onNotificationsChanged: (cb) => ipcRenderer.on('notifications-changed', () => cb()),
+  onStudioCommand:        (cb) => ipcRenderer.on('studio-cmd', (_, c) => cb(c)),
+
   // Characters
   listCharacters:    ()  => ipcRenderer.invoke('list-characters'),
   importCharacter:   ()  => ipcRenderer.invoke('import-character'),
