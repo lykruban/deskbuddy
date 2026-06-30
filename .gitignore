@@ -23,3 +23,6 @@ Thumbs.db
 *.p12
 *.pfx
 csc-*.json
+
+# Local website test models (not committed — large/3rd-party)
+website/models/
