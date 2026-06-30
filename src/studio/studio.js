@@ -2285,6 +2285,7 @@ window.studioAuthSubmit = async () => {
   if (!r?.ok) { _gel('sauth-err').textContent = r?.error || 'Failed'; return; }
   _me = r.user; _gel('sauth-pass').value = ''; _gel('sauth-err').textContent = '';
   refreshAuthChip();
+  loadNotifications();   // welcome message + any dev updates land in the inbox
   // On sign-up, reveal the one-time recovery code first; the gate closes after they save it.
   if (signing && r.recoveryCode) showRecoveryModal(r.recoveryCode);
   else _gel('studio-auth-gate').style.display = 'none';
@@ -2389,7 +2390,51 @@ async function ensureAuth() {
   try { const s = await window.deskbuddy.authState(); _me = s?.user || null; } catch { _me = null; }
   _gel('studio-auth-gate').style.display = _me ? 'none' : 'flex';
   refreshAuthChip();
+  if (_me) loadNotifications();
 }
+
+// ── Messages / notifications (permanent inbox; welcome + dev updates) ─────────────
+let _notifs = [];
+function updateNotifDot(unread) { const d = _gel('notif-dot'); if (d) d.style.display = unread > 0 ? '' : 'none'; }
+async function loadNotifications() {
+  try { _notifs = await window.deskbuddy.notifSync() || []; } catch { _notifs = []; }
+  updateNotifDot(_notifs.filter(m => !m.read).length);
+  if (_gel('notif-modal')?.style.display === 'flex') renderNotifList();
+}
+function fmtTime(ts) {
+  const d = new Date(ts), now = Date.now(), diff = (now - ts) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function renderNotifList() {
+  const box = _gel('notif-list'); if (!box) return;
+  if (!_notifs.length) { box.innerHTML = '<div style="text-align:center;color:var(--muted,#8b93a7);padding:30px 10px;font-size:13px">No messages yet.</div>'; return; }
+  box.innerHTML = _notifs.map(m => {
+    const accent = m.read ? 'var(--border,#2a2f3a)' : 'var(--accent,#7c5cff)';
+    const dot = m.read ? '' : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff4d4f;margin-right:7px;vertical-align:middle"></span>';
+    const link = m.link ? `<div style="margin-top:8px"><a href="#" onclick="openNotifLink('${esc(m.link)}');return false" style="color:var(--accent2,#36d6c4);font-size:12.5px;font-weight:600">Open link →</a></div>` : '';
+    return `<div style="border:1px solid var(--border,#2a2f3a);border-left:3px solid ${accent};border-radius:10px;padding:13px 15px;margin-bottom:9px;background:var(--bg,#0f1115)">
+      <div style="display:flex;align-items:center;gap:6px"><div style="font-weight:700;font-size:14px;flex:1">${dot}${esc(m.title)}</div><div style="font-size:11px;color:var(--muted,#8b93a7)">${fmtTime(m.ts)}</div></div>
+      <div style="color:var(--muted,#9aa3b5);font-size:13px;line-height:1.55;margin-top:5px;white-space:pre-line">${esc(m.body)}</div>${link}
+    </div>`;
+  }).join('');
+}
+window.openNotifLink = (url) => { try { window.deskbuddy.openExternal(url); } catch {} };
+window.openNotifications = async () => {
+  await loadNotifications();
+  renderNotifList();                       // render with unread highlights first
+  _gel('notif-modal').style.display = 'flex';
+  try { await window.deskbuddy.notifMarkRead(); } catch {}   // then clear the badge (all read)
+  updateNotifDot(0);
+};
+window.closeNotifications = () => { const m = _gel('notif-modal'); if (m) m.style.display = 'none'; };
+window.markAllRead = async () => {
+  try { await window.deskbuddy.notifMarkRead(); } catch {}
+  _notifs.forEach(m => m.read = true); updateNotifDot(0); renderNotifList();
+};
 
 // ── Whole-library export / import ────────────────────────────────────────────────
 window.exportLibrary = async () => {
@@ -2411,6 +2456,8 @@ window.importLibrary = async () => {
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+window.deskbuddy.onNotificationsChanged?.(() => loadNotifications());
+window.deskbuddy.onStudioCommand?.((cmd) => { if (cmd === 'open-notifications') openNotifications(); });
 (async () => {
   await ensureAuth();          // must sign in before using Studio
   await loadCharList();

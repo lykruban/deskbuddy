@@ -193,6 +193,7 @@
     <button class="btn btn-secondary" onclick="importCharacter()">Import Model</button>
     <button class="btn btn-secondary" onclick="exportLibrary()" title="Export your whole library (characters, animations, scenes) to a folder you can copy to another PC">⬆ Export Library</button>
     <button class="btn btn-secondary" onclick="importLibrary()" title="Import a DeskBuddyLibrary folder from another PC">⬇ Import Library</button>
+    <button id="notif-btn" class="btn btn-secondary" onclick="openNotifications()" title="Messages" style="position:relative">🔔<span id="notif-dot" style="display:none;position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:#ff4d4f;border:2px solid var(--surface,#1a1d24)"></span></button>
     <button id="acct-chip" class="btn btn-secondary" onclick="studioLogout()" title="Sign out" style="display:none">👤 <span id="acct-name"></span></button>
     <button class="btn btn-primary" id="save-btn" onclick="saveCharpack()" disabled>Save & Activate</button>
   </header>
@@ -270,6 +271,18 @@
         <div id="rec-note" style="color:var(--text,#e6e9f0);font-size:13px;line-height:1.65;background:var(--bg,#0f1115);border:1px solid var(--border,#2a2f3a);border-radius:10px;padding:16px"></div>
         <button class="btn btn-primary" style="padding:11px" onclick="recClose()">I will guard it with my life 🫡</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Messages / notifications inbox (permanent — nothing is ever deleted) -->
+  <div id="notif-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:550;display:none;align-items:center;justify-content:center" onclick="if(event.target===this)closeNotifications()">
+    <div style="width:480px;max-width:92vw;max-height:80vh;background:var(--surface,#1a1d24);border:1px solid var(--border,#2a2f3a);border-radius:14px;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+      <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border,#2a2f3a)">
+        <span style="font-size:18px">🔔</span><h2 style="font-size:16px;margin:0;flex:1">Messages</h2>
+        <button class="btn btn-secondary" style="font-size:12px" onclick="markAllRead()">Mark all read</button>
+        <button class="btn btn-secondary" style="font-size:12px" onclick="closeNotifications()">✕</button>
+      </div>
+      <div id="notif-list" style="overflow-y:auto;padding:10px 14px 14px"></div>
     </div>
   </div>
 
