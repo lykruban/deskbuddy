@@ -198,6 +198,12 @@
     <button class="btn btn-primary" id="save-btn" onclick="saveCharpack()" disabled>Save & Activate</button>
   </header>
 
+  <!-- Studio credit badge (glassy, gradient Yuvexel) -->
+  <div id="yuvexel-credit" style="position:fixed;right:14px;bottom:12px;z-index:400;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--muted,#8b93a7);background:rgba(20,24,33,.72);border:1px solid var(--border,#2a2f3a);padding:6px 12px;border-radius:999px;backdrop-filter:blur(8px);box-shadow:0 6px 20px rgba(0,0,0,.35);pointer-events:none;user-select:none">
+    <span style="width:17px;height:17px;border-radius:5px;background:linear-gradient(120deg,#7c5cff,#36d6c4);display:inline-flex;align-items:center;justify-content:center;font-size:10px">🐾</span>
+    DeskBuddy v1.0.0 · © 2026 <b style="background:linear-gradient(120deg,#7c5cff,#36d6c4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Yuvexel</b>
+  </div>
+
   <!-- Login gate: you must sign in to use Character Studio (library is linked to your account) -->
   <div id="studio-auth-gate" style="position:fixed;inset:0;background:var(--bg,#0f1115);z-index:500;display:none;align-items:center;justify-content:center;">
     <!-- Sign in / create account -->
@@ -212,6 +218,7 @@
       <button class="btn btn-primary" id="sauth-btn" style="padding:11px" onclick="studioAuthSubmit()">Sign in</button>
       <div id="sauth-forgot" style="text-align:center;font-size:12px;color:var(--muted,#8b93a7);cursor:pointer" onclick="studioShowReset()">Forgot password?</div>
       <div style="text-align:center;font-size:12px;color:var(--muted,#8b93a7);cursor:pointer" onclick="studioAuthToggle()"><span id="sauth-switch-txt">No account?</span> <b id="sauth-switch-lbl">Create one</b></div>
+      <div style="text-align:center;font-size:10.5px;color:var(--faint,#6b7384);margin-top:6px;border-top:1px solid var(--border,#2a2f3a);padding-top:12px">🐾 DeskBuddy · © 2026 <b style="background:linear-gradient(120deg,#7c5cff,#36d6c4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Yuvexel</b></div>
     </div>
 
     <!-- Reset password (hidden until "Forgot password?") -->

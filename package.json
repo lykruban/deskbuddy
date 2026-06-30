@@ -11,8 +11,9 @@
     "build:linux": "electron-builder --linux"
   },
   "build": {
-    "appId": "com.deskbuddy.app",
+    "appId": "com.yuvexel.deskbuddy",
     "productName": "DeskBuddy",
+    "copyright": "© 2026 Yuvexel",
     "directories": {
       "output": "dist"
     },
@@ -41,7 +42,7 @@
     }
   },
   "keywords": [],
-  "author": "",
+  "author": "Yuvexel",
   "license": "ISC",
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.4",

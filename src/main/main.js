@@ -186,6 +186,7 @@ function trayTemplate() {
     { label: 'Character Studio', click: createStudioWindow },
     { label: 'Marketplace — Coming Soon', enabled: false },
     { type: 'separator' },
+    { label: `DeskBuddy v${app.getVersion()}  ·  © 2026 Yuvexel`, enabled: false },
     { label: 'Quit DeskBuddy',   click: () => app.quit() },
   ];
 }
