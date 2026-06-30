@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeskBuddy — Build your own living desktop</title>
+<meta name="description" content="DeskBuddy is a desktop companion that lives in scenes across all your monitors. Bring your own characters, build worlds, and share them. Free to download.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%90%BE%3C/text%3E%3C/svg%3E">
+<meta property="og:title" content="DeskBuddy — Build your own living desktop">
+<meta property="og:description" content="A companion that lives in scenes across all your monitors. Bring your own characters, build worlds, share them.">
+<meta property="og:image" content="https://deskbuddy.yuvexel.com/og.png">
+<style>
+  :root{
+    --bg:#0c0e13; --bg2:#10131b; --surface:#161a23; --surface2:#1d222e;
+    --border:#262d3b; --text:#eef1f7; --muted:#9aa3b5; --faint:#6b7384;
+    --accent:#7c5cff; --accent2:#36d6c4; --warm:#ff8a5c;
+    --grad:linear-gradient(120deg,var(--accent),var(--accent2));
+    --radius:16px; --maxw:1120px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .btn{display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;font-family:inherit;font-size:15px;font-weight:600;
+    padding:13px 22px;border-radius:12px;transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
+  .btn-primary{background:var(--grad);color:#0a0c10;box-shadow:0 8px 24px rgba(124,92,255,.3)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(124,92,255,.45)}
+  .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+  .btn-ghost:hover{transform:translateY(-2px);border-color:var(--accent)}
+  .pill{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--muted);
+    background:var(--surface);border:1px solid var(--border);padding:6px 13px;border-radius:999px}
+
+  /* Nav */
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(12,14,19,.72);border-bottom:1px solid var(--border)}
+  .nav-in{display:flex;align-items:center;gap:18px;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:-.2px}
+  .logo-badge{width:30px;height:30px;border-radius:8px;background:var(--grad);display:inline-flex;align-items:center;justify-content:center;font-size:17px}
+  .nav-links{display:flex;gap:26px;margin-left:auto}
+  .nav-links a{color:var(--muted);font-size:14.5px;font-weight:500}
+  .nav-links a:hover{color:var(--text)}
+  .nav-cta{margin-left:8px}
+  @media(max-width:760px){.nav-links{display:none}.nav-cta{margin-left:auto}}
+
+  /* Hero */
+  .hero{position:relative;padding:86px 0 70px;text-align:center;overflow:hidden}
+  .glow{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;z-index:0}
+  .glow.a{width:520px;height:520px;background:var(--accent);top:-180px;left:-120px}
+  .glow.b{width:460px;height:460px;background:var(--accent2);top:-140px;right:-120px;opacity:.35}
+  .hero .wrap{position:relative;z-index:1}
+  h1{font-size:clamp(38px,6vw,68px);line-height:1.05;letter-spacing:-1.5px;font-weight:850;margin:18px auto 0;max-width:14ch}
+  .sub{font-size:clamp(16px,2.2vw,20px);color:var(--muted);max-width:60ch;margin:22px auto 0}
+  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:32px}
+  .note{margin-top:14px;font-size:13px;color:var(--faint)}
+
+  /* Faux desktop mockup */
+  .mock{margin:56px auto 0;max-width:980px;border-radius:20px;border:1px solid var(--border);
+    background:linear-gradient(180deg,#13182250,#0c0e13);box-shadow:0 40px 90px rgba(0,0,0,.55);overflow:hidden;position:relative}
+  .mock-bar{display:flex;align-items:center;gap:8px;padding:11px 16px;background:#0e1118;border-bottom:1px solid var(--border)}
+  .mock-bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .mock-bar i:nth-child(1){background:#ff5f57}.mock-bar i:nth-child(2){background:#febc2e}.mock-bar i:nth-child(3){background:#28c840}
+  .mock-stage{position:relative;height:380px;background:
+    radial-gradient(120% 80% at 70% 10%,#2a3350 0%,#161a26 45%,#0e1118 100%);overflow:hidden}
+  .room-line{position:absolute;left:0;right:0;bottom:30%;height:1px;background:linear-gradient(90deg,transparent,#3a445c 50%,transparent)}
+  .floor{position:absolute;left:0;right:0;bottom:0;height:30%;
+    background:linear-gradient(180deg,#222a3d,#161b28);border-top:1px solid #313a52}
+  .seam{position:absolute;top:0;bottom:0;left:50%;width:1px;background:linear-gradient(180deg,transparent,#3b455f,transparent);opacity:.4}
+  .buddy{position:absolute;bottom:30%;left:30%;width:74px;height:74px;border-radius:18px;
+    background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:38px;
+    box-shadow:0 18px 30px rgba(0,0,0,.45);animation:walk 7s ease-in-out infinite}
+  .buddy:after{content:"";position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);
+    width:60px;height:12px;background:rgba(0,0,0,.5);filter:blur(6px);border-radius:50%}
+  @keyframes walk{0%,100%{left:24%}50%{left:64%}}
+  .mock-tag{position:absolute;top:14px;left:16px}
+  .mock-cap{position:absolute;bottom:12px;right:16px;font-size:12px;color:var(--faint)}
+
+  /* Logos / trust strip */
+  .strip{border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg2)}
+  .strip .wrap{display:flex;gap:14px 40px;flex-wrap:wrap;justify-content:center;align-items:center;padding:22px 24px;color:var(--faint);font-size:14px}
+  .strip b{color:var(--muted)}
+
+  /* Sections */
+  section{padding:88px 0}
+  .eyebrow{text-align:center;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent2)}
+  h2{text-align:center;font-size:clamp(28px,4vw,42px);letter-spacing:-1px;font-weight:800;margin:12px auto 0;max-width:18ch}
+  .lead{text-align:center;color:var(--muted);max-width:58ch;margin:16px auto 0}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:54px}
+  @media(max-width:880px){.grid{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:26px;transition:transform .18s,border-color .18s}
+  .card:hover{transform:translateY(-4px);border-color:#34405a}
+  .card .ic{font-size:28px}
+  .card h3{font-size:18px;margin:14px 0 8px;font-weight:700}
+  .card p{color:var(--muted);font-size:14.5px}
+  .soon{font-size:11px;font-weight:700;color:var(--warm);border:1px solid #4a3526;background:#241a14;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
+
+  /* Different / comparison */
+  .compare{max-width:760px;margin:48px auto 0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .crow{display:grid;grid-template-columns:1.4fr 1fr 1fr;border-bottom:1px solid var(--border)}
+  .crow:last-child{border-bottom:none}
+  .crow>div{padding:15px 18px;font-size:14.5px}
+  .crow .h{font-weight:700;background:var(--bg2)}
+  .crow .them{color:var(--muted)}
+  .crow .us{color:var(--text);font-weight:600;background:linear-gradient(90deg,rgba(124,92,255,.08),rgba(54,214,196,.06))}
+  .crow .lbl{color:var(--muted)}
+  .yes{color:var(--accent2);font-weight:700}.no{color:var(--faint)}
+
+  /* Pricing */
+  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:54px}
+  @media(max-width:880px){.tiers{grid-template-columns:1fr}}
+  .tier{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:30px}
+  .tier.hl{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset, 0 20px 50px rgba(124,92,255,.18)}
+  .tier h3{font-size:16px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:1px}
+  .price{font-size:42px;font-weight:850;letter-spacing:-1px;margin:10px 0 4px}
+  .price small{font-size:15px;color:var(--muted);font-weight:600}
+  .tier ul{list-style:none;margin:18px 0 24px}
+  .tier li{padding:7px 0;color:var(--muted);font-size:14.5px;display:flex;gap:10px}
+  .tier li:before{content:"✓";color:var(--accent2);font-weight:800}
+  .tier .btn{width:100%;justify-content:center}
+
+  /* Marketplace / capture */
+  .capture{background:linear-gradient(120deg,#15192340,#10131b);border:1px solid var(--border);border-radius:24px;
+    padding:46px;text-align:center;max-width:760px;margin:0 auto}
+  .capture h2{margin-top:6px}
+  .form{display:flex;gap:10px;max-width:440px;margin:26px auto 0;flex-wrap:wrap;justify-content:center}
+  .form input{flex:1;min-width:220px;padding:13px 16px;border-radius:12px;border:1px solid var(--border);
+    background:var(--bg);color:var(--text);font-size:15px;font-family:inherit}
+  .form input:focus{outline:none;border-color:var(--accent)}
+  .ok{color:var(--accent2);margin-top:14px;font-weight:600;display:none}
+
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--faint);font-size:14px}
+  .foot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+  .foot a{color:var(--muted)}.foot a:hover{color:var(--text)}
+
+  .reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.in{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="logo" href="#"><span class="logo-badge">🐾</span>DeskBuddy</a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#different">Why it's different</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#marketplace">Marketplace</a>
+    </div>
+    <a class="btn btn-primary nav-cta" href="#download">Download free</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="wrap">
+    <span class="pill">🐾 A desktop companion that actually <i>lives</i> on your screen</span>
+    <h1>Build your own <span class="grad-text">living desktop.</span></h1>
+    <p class="sub">DeskBuddy is a companion that wanders through scenes across <b>all your monitors</b> — bring your own characters, build worlds for them to live in, and share them. Part desktop pet, part living wallpaper, fully yours.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#download">⬇ Download for Windows — Free</a>
+      <a class="btn btn-ghost" href="#features">See what it does</a>
+    </div>
+    <div class="note">Free forever • No account needed to start • macOS &amp; Linux coming</div>
+
+    <!-- Faux desktop mockup (swap for a real screenshot / demo loop) -->
+    <div class="mock reveal">
+      <div class="mock-bar"><i></i><i></i><i></i></div>
+      <div class="mock-stage">
+        <span class="pill mock-tag">Scene mode · 2 monitors</span>
+        <div class="seam"></div>
+        <div class="floor"></div>
+        <div class="buddy">🐾</div>
+        <span class="mock-cap">▶ Drop a real demo clip here</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="strip">
+  <div class="wrap"><b>Bring your own models</b> · VRM &amp; Mixamo animations · <b>Multi-monitor worlds</b> · Built-in Character Studio &amp; Scene Editor · <b>Creator marketplace</b></div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <div class="eyebrow">What it does</div>
+    <h2>A pet, a world, and the tools to make both</h2>
+    <p class="lead">Most desktop pets give you one character to sit on your screen. DeskBuddy gives you a world to build and a companion that lives in it.</p>
+    <div class="grid">
+      <div class="card reveal"><div class="ic">🐾</div><h3>Buddy mode</h3><p>A character that hangs out on your desktop — wanders, idles, reacts, and keeps you company while you work.</p></div>
+      <div class="card reveal"><div class="ic">🖼️</div><h3>Living-wallpaper scenes</h3><p>Drop your character into a built scene — perspective floors, walls, props and lighting — that becomes your wallpaper.</p></div>
+      <div class="card reveal"><div class="ic">🖥️</div><h3>Multi-monitor worlds</h3><p>Each monitor becomes its own room. Your buddy walks — and teleports through doors — between screens.</p></div>
+      <div class="card reveal"><div class="ic">🎨</div><h3>Character Studio</h3><p>Import your own 3D models and Mixamo animations, rig them, and make them yours. Creation is always free.</p></div>
+      <div class="card reveal"><div class="ic">🧩</div><h3>Scene Editor</h3><p>Design rooms with walls, doors, no-walk zones, anchors and lighting — then watch your buddy live in them.</p></div>
+      <div class="card reveal"><div class="ic">🛍️</div><h3>Marketplace<span class="soon">Coming soon</span></h3><p>Discover, share and sell characters, animation packs and scenes. Built by the community, for the community.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="different" style="background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="wrap">
+    <div class="eyebrow">Why it's different</div>
+    <h2>Not just a mascot — a world you own</h2>
+    <p class="lead">Other desktop pets keep you on rails. DeskBuddy is open by design: your characters, your scenes, and a marketplace where creators actually earn.</p>
+    <div class="compare reveal">
+      <div class="crow"><div class="h lbl">&nbsp;</div><div class="h them">Typical desktop pet</div><div class="h us">DeskBuddy</div></div>
+      <div class="crow"><div class="lbl">Scenes / worlds</div><div class="them no">✕ Floats on desktop</div><div class="us">Build full scenes</div></div>
+      <div class="crow"><div class="lbl">Multi-monitor</div><div class="them no">✕ One screen</div><div class="us">A world across all monitors</div></div>
+      <div class="crow"><div class="lbl">Make your own</div><div class="them them">Limited / locked</div><div class="us">Full creation studio</div></div>
+      <div class="crow"><div class="lbl">Content</div><div class="them them">Mostly paid DLC</div><div class="us">Open marketplace + your imports</div></div>
+      <div class="crow"><div class="lbl">Creators earn</div><div class="them no">✕</div><div class="us yes">✓ Sell what you make</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <div class="eyebrow">Pricing</div>
+    <h2>Free to start. Cheap to go further.</h2>
+    <p class="lead">The whole app — buddy, scenes, and the full creation studio — is free. Pay once for power features, or buy and sell on the marketplace.</p>
+    <div class="tiers">
+      <div class="tier reveal">
+        <h3>Free</h3>
+        <div class="price">$0</div>
+        <ul><li>Buddy mode</li><li>Basic scenes</li><li>Full Character Studio &amp; Scene Editor</li><li>Use free marketplace content</li></ul>
+        <a class="btn btn-ghost" href="#download">Download free</a>
+      </div>
+      <div class="tier hl reveal">
+        <h3>Pro <span class="soon">Coming soon</span></h3>
+        <div class="price">$5<small>–8 · one-time</small></div>
+        <ul><li>Unlimited multi-monitor scenes</li><li>Voice companion</li><li>Premium lighting &amp; effects</li><li>Multiple buddies at once</li></ul>
+        <a class="btn btn-primary" href="#marketplace">Get notified</a>
+      </div>
+      <div class="tier reveal">
+        <h3>Marketplace <span class="soon">Coming soon</span></h3>
+        <div class="price">Earn</div>
+        <ul><li>Sell your characters &amp; scenes</li><li>Animation packs</li><li>Keep most of every sale</li><li>Built-in to the app</li></ul>
+        <a class="btn btn-ghost" href="#marketplace">Join the waitlist</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="marketplace">
+  <div class="wrap">
+    <div class="capture reveal">
+      <span class="pill">🛍️ Marketplace — opening soon</span>
+      <h2>Be first in line</h2>
+      <p class="lead">Get notified when the marketplace, Pro, and the next updates drop — and help vote on what we build next.</p>
+      <form class="form" onsubmit="return notifyMe(event)">
+        <input type="email" id="email" placeholder="you@email.com" required>
+        <button class="btn btn-primary" type="submit">Notify me</button>
+      </form>
+      <div class="ok" id="ok">🎉 You're on the list — talk soon!</div>
+    </div>
+  </div>
+</section>
+
+<section id="download" style="text-align:center;padding-top:0">
+  <div class="wrap">
+    <div class="eyebrow">Get DeskBuddy</div>
+    <h2>Start building your living desktop</h2>
+    <p class="lead">Free download for Windows. Make your first buddy in minutes.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#" onclick="return dl()">⬇ Download for Windows</a>
+      <a class="btn btn-ghost" href="#">⌛ macOS &amp; Linux — soon</a>
+    </div>
+    <div class="note">Heads-up: until the app is code-signed, Windows may show "More info → Run anyway."</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <a class="logo" href="#"><span class="logo-badge" style="width:24px;height:24px;font-size:14px">🐾</span>DeskBuddy</a>
+    <div>© 2026 DeskBuddy — a <b style="color:var(--muted)">Yuvexel</b> project · <a href="#features">Features</a> · <a href="#pricing">Pricing</a> · <a href="#marketplace">Marketplace</a></div>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+  // Placeholder handlers — wire these to the real server/download later.
+  function notifyMe(e){e.preventDefault();
+    // TODO: POST the email to the DeskBuddy server (waitlist) once it's live.
+    document.getElementById('email').value='';
+    document.getElementById('ok').style.display='block';
+    return false;
+  }
+  function dl(){
+    // TODO: point at the hosted installer (GitHub Release / itch.io / your CDN).
+    alert('Download link goes here once the installer is hosted.\n(Build is ready: DeskBuddy Setup 1.0.0.exe)');
+    return false;
+  }
+</script>
+</body>
+</html>
