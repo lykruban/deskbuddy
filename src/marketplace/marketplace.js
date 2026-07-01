@@ -1,6 +1,6 @@
 // DeskBuddy Marketplace — characters + animation packs
-let API = 'http://localhost:4242/api';
-const SERVER = API.replace(/\/api$/, '');   // for /uploads (thumbnails)
+let API = 'https://api.yuvexel.com/api';   // production default; overridden by the app's shared SERVER_BASE at init
+let SERVER = API.replace(/\/api$/, '');   // for /uploads (thumbnails)
 const thumbUrl = (f) => (f ? `${SERVER}/uploads/${f}` : '');
 
 // State
@@ -521,4 +521,9 @@ window.submitUpload = async () => {
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-checkAuth();
+(async () => {
+  // Use the app's shared SERVER_BASE (defaults to the live server) so the marketplace and the
+  // rest of the app always talk to the same backend.
+  try { const b = await window.deskbuddy?.authServerBase?.(); if (b) { SERVER = b.replace(/\/+$/, ''); API = SERVER + '/api'; } } catch {}
+  checkAuth();
+})();

@@ -552,7 +552,7 @@ ipcMain.handle('get-scenes-dir',     () => SCENES_DIR);
 // in settings so it survives restarts. All auth goes over HTTP to SERVER_BASE so it
 // behaves identically whether the backend is the in-app localhost server (now) or a
 // remote deployed server (later — just point `serverBase` at the domain).
-const SERVER_BASE = () => (loadSettings().serverBase || process.env.DESKBUDDY_SERVER || `http://127.0.0.1:${PORT}`);
+const SERVER_BASE = () => (loadSettings().serverBase || process.env.DESKBUDDY_SERVER || 'https://api.yuvexel.com');
 async function authFetch(p, opts = {}) {
   const res  = await fetch(SERVER_BASE() + '/api' + p, opts);
   let data = null; try { data = await res.json(); } catch {}
