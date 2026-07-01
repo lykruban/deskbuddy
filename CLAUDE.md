@@ -1,6 +1,10 @@
 # DeskBuddy — project context & status
 
-_Last updated: 2026-06-30. This file auto-loads for Claude Code sessions in this repo. Keep it current._
+_Last updated: 2026-07-01. This file auto-loads for Claude Code sessions in this repo. Keep it current._
+
+> **➡️ Taking over the project? Read this file, then open [`NEXT-TASKS.md`](NEXT-TASKS.md) — the full,
+> executable roadmap for everything remaining (website, installer hosting, marketplace, OAuth,
+> code-signing, render quality, voice). Each task has steps + what to ask the user for.**
 
 ## What this is
 **DeskBuddy** — a Windows desktop-pet / living-wallpaper app (Electron + three.js + @pixiv/three-vrm).

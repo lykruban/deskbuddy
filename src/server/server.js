@@ -120,6 +120,21 @@ function startServer(dataDir) {
       res.json(Array.isArray(data) ? data : (data.announcements || []));
     } catch { res.json([]); }
   });
+
+  // Website waitlist — collect emails for the marketplace/Pro launch. Appends to
+  // dataDir/waitlist.json (deduped). Public; no auth. CORS is already open.
+  app.post('/api/waitlist', (req, res) => {
+    const email = String((req.body || {}).email || '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email' });
+    try {
+      const f = path.join(dataDir, 'waitlist.json');
+      let list = []; try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
+      if (!Array.isArray(list)) list = [];
+      if (!list.find(x => x.email === email)) { list.push({ email, at: Date.now() }); fs.writeFileSync(f, JSON.stringify(list, null, 2)); }
+      res.json({ ok: true });
+    } catch { res.status(500).json({ error: 'Could not save' }); }
+  });
+
   app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
   app.get('/api/me/library', requireAuth, (req, res) => res.json(req.user.owned || []));
 
