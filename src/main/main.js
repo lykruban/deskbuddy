@@ -80,6 +80,15 @@ function loadSettings() {
 function saveSettings(s) { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2)); }
 
 // ── Windows ───────────────────────────────────────────────────────────────────
+// Forward renderer console + load/preload errors to the main log (visible with
+// ELECTRON_ENABLE_LOGGING=1) — invaluable for debugging the PACKAGED app.
+function wireRendererLogs(win, tag) {
+  const wc = win.webContents;
+  wc.on('console-message', (_e, lvl, msg, line, src) => console.log(`[${tag}]`, msg, src ? `(${String(src).split('/').pop()}:${line})` : ''));
+  wc.on('preload-error', (_e, p, err) => console.error(`[${tag} preload-error]`, p, err && err.message));
+  wc.on('did-fail-load', (_e, code, desc, url) => console.error(`[${tag} did-fail-load]`, code, desc, url));
+  wc.on('render-process-gone', (_e, d) => console.error(`[${tag} render-gone]`, d && d.reason));
+}
 function createOverlayWindow() {
   const s = loadSettings();
   overlayWindow = new BrowserWindow({
@@ -90,6 +99,7 @@ function createOverlayWindow() {
     skipTaskbar: true, resizable: false, hasShadow: false, focusable: true,
     webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(__dirname, 'preload.js') },
   });
+  wireRendererLogs(overlayWindow, 'overlay');
   overlayWindow.loadFile(path.join(__dirname, '../overlay/overlay.html'));
   overlayWindow.on('closed', () => { overlayWindow = null; });
 
@@ -116,6 +126,7 @@ function createStudioWindow() {
     width: 1160, height: 740, title: 'DeskBuddy Studio',
     webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(__dirname, 'preload.js') },
   });
+  wireRendererLogs(studioWindow, 'studio');
   studioWindow.loadFile(path.join(__dirname, '../studio/studio.html'));
   studioWindow.on('closed', () => { studioWindow = null; });
 }
@@ -126,6 +137,7 @@ function createMarketplaceWindow() {
     width: 1040, height: 720, title: 'DeskBuddy Marketplace',
     webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(__dirname, 'preload.js') },
   });
+  wireRendererLogs(marketplaceWindow, 'marketplace');
   marketplaceWindow.loadFile(path.join(__dirname, '../marketplace/marketplace.html'));
   marketplaceWindow.on('closed', () => { marketplaceWindow = null; });
 }

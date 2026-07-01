@@ -79,6 +79,14 @@ sudo systemctl restart deskbuddy-api deskbuddy-web`. Full server setup lives in 
 8. Optional: stop running the redundant in-app local server when `SERVER_BASE` is remote.
 
 ## Gotchas
+- **PACKAGING (critical):** electron-builder's default file filter STRIPS `node_modules/*/examples/`
+  from the build — that deleted `three/examples/jsm/` (all the loaders), which silently broke
+  `studio.js`/`overlay.js` (ES module import fails → no `window.*` handlers → nothing clickable,
+  login gate never shows). FIX: the three.js jsm loaders are **vendored into `src/vendor/three-jsm/`**
+  (always packaged, not under node_modules) and the import maps in `studio.html`/`overlay.html` point
+  there. `asar: false` is also set (safe, aids debugging). If you `npm update three`, re-copy:
+  `cp -r node_modules/three/examples/jsm src/vendor/three-jsm`. Renderer console is forwarded to the
+  main log via `wireRendererLogs` (visible with `ELECTRON_ENABLE_LOGGING=1`) — use it to debug packaged builds.
 - Monetization plan: FREE app + one-time **Pro** unlock (~$5–8) + marketplace cut. No subscription.
 - The app still starts its **in-app local server** on 4242 even though it points at prod (harmless, unused).
 - `website/models/` (large local GLBs) is gitignored. Installers are too big for git (use the build output).

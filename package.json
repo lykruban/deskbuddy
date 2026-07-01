@@ -14,13 +14,15 @@
     "appId": "com.yuvexel.deskbuddy",
     "productName": "DeskBuddy",
     "copyright": "© 2026 Yuvexel",
+    "asar": false,
     "directories": {
       "output": "dist"
     },
     "files": [
       "src/**/*",
       "assets/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "node_modules/three/examples/jsm/**/*"
     ],
     "win": {
       "target": [
