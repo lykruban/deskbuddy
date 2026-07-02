@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeskBuddy — your desktop, but alive</title>
+<meta name="description" content="DeskBuddy is a companion that lives on your desktop — and in worlds you build across every monitor. Bring your own characters. Free for Windows.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%90%BE%3C/text%3E%3C/svg%3E">
+<meta property="og:title" content="DeskBuddy — your desktop, but alive">
+<meta property="og:description" content="A companion that lives in worlds you build across every monitor. Free for Windows.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://deskbuddy.yuvexel.com">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js"
+  }
+}
+</script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<!-- The live buddy: a fixed transparent canvas ABOVE the page (pointer-events:none),
+     so the character genuinely lives ON the site. Its shadow + speech bubble are DOM. -->
+<canvas id="buddy-stage" aria-hidden="true"></canvas>
+<div id="buddy-shadow" aria-hidden="true"></div>
+<div id="buddy-bubble" role="status" aria-live="polite"></div>
+<div id="buddy-hud">
+  <span class="hud-chip" id="buddy-name"><span class="live-dot"></span><span id="buddy-name-txt">waking up…</span></span>
+  <label class="hud-chip hud-btn" title="Show off your own character">⬆ your .vrm<input id="vrm-file" type="file" accept=".vrm" hidden></label>
+  <button class="hud-chip hud-btn" id="buddy-toggle" title="Hide the buddy">🙈 hide</button>
+</div>
+
+<!-- ══════════════ NAV ══════════════ -->
+<header class="nav" id="top">
+  <div class="wrap nav-in">
+    <a class="logo" href="#top" aria-label="DeskBuddy home"><span class="paw">🐾</span><span>DeskBuddy</span></a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#showcase">See it</a>
+      <a href="#versus">Why</a>
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#marketplace">Marketplace</a>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="#download">Download free</a>
+  </div>
+</header>
+
+<main>
+<!-- ══════════════ HERO ══════════════ -->
+<section class="hero" id="hero" data-quip="hero">
+  <div class="mesh m1"></div><div class="mesh m2"></div><div class="mesh m3"></div>
+  <div class="wrap hero-in">
+    <p class="kicker reveal">🐾 a real, live 3D character is loose on this page</p>
+    <h1 class="reveal d1">Your desktop is gorgeous.<br><em>It's also doing nothing.</em></h1>
+    <p class="sub reveal d2">DeskBuddy puts a companion on your screen that <b>wanders, reacts, and lives</b> in
+      little worlds you build — across every monitor you own. A wallpaper is a photo of a beach it will never
+      take you to. This is different.</p>
+    <div class="cta-row reveal d3">
+      <a class="btn btn-primary btn-lg" href="#download">⬇ Download for Windows — Free</a>
+      <a class="btn btn-ghost btn-lg" href="#showcase">Show me proof</a>
+    </div>
+    <p class="micro reveal d4">Free forever · No account needed to start · Windows 10/11</p>
+  </div>
+  <div class="hero-floor" aria-hidden="true"></div>
+  <a class="scroll-cue" href="#showcase" aria-label="Scroll to see it in action"><span></span></a>
+</section>
+
+<!-- ══════════════ MARQUEE ══════════════ -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track">
+    <span>bring your own characters</span><i>🐾</i><span>multi-monitor worlds</span><i>🚪</i>
+    <span>living-wallpaper scenes</span><i>🖼️</i><span>character studio</span><i>🎨</i>
+    <span>scene editor</span><i>🧩</i><span>creator marketplace — soon</span><i>🛍️</i>
+    <span>bring your own characters</span><i>🐾</i><span>multi-monitor worlds</span><i>🚪</i>
+    <span>living-wallpaper scenes</span><i>🖼️</i><span>character studio</span><i>🎨</i>
+    <span>scene editor</span><i>🧩</i><span>creator marketplace — soon</span><i>🛍️</i>
+  </div>
+</div>
+
+<!-- ══════════════ SHOWCASE / GALLERY ══════════════ -->
+<section class="section" id="showcase" data-quip="showcase">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2 class="reveal">See it <em>living</em></h2>
+      <p class="lead reveal d1">Real captures from real desktops. The star of the show insists you look at the
+        door one — walking between monitors is their favorite trick.</p>
+    </div>
+    <div class="gallery" id="gallery"><!-- built from CONFIG.MEDIA --></div>
+    <div class="sec-cta reveal"><a class="btn btn-primary" href="#download">Put one on my desktop →</a></div>
+  </div>
+</section>
+
+<!-- ══════════════ VERSUS ══════════════ -->
+<section class="section alt" id="versus" data-quip="versus">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2 class="reveal">A completely fair, unbiased comparison</h2>
+      <p class="lead reveal d1">We ran the numbers. The numbers were rude to the wallpaper.</p>
+    </div>
+    <div class="versus">
+      <article class="vcard reveal">
+        <header><span class="vmoji">😴</span><h3>A normal desktop</h3><span class="tag dull">status quo</span></header>
+        <div class="vscreen dull"><span class="vic">🖼️</span><div class="vicons">🗂️ 🗑️ 🌐</div></div>
+        <ul class="vlist">
+          <li>Exists. Technically.</li>
+          <li>Holds icons with quiet resignation.</li>
+          <li>A beach photo. Emotionally unavailable.</li>
+          <li>Zero personality patches since launch.</li>
+        </ul>
+      </article>
+      <article class="vcard win reveal d1">
+        <header><span class="vmoji">🐾</span><h3>Yours, with DeskBuddy</h3><span class="tag good">upgraded</span></header>
+        <div class="vscreen good"><div class="vfloor"></div><span class="vbuddy">🐾</span></div>
+        <ul class="vlist">
+          <li>Someone's home. Look at them go.</li>
+          <li>Lives in scenes <b>you</b> built.</li>
+          <li>Commutes between monitors. Through doors. Adorably.</li>
+          <li>Has opinions, a schedule, and a vibe.</li>
+        </ul>
+      </article>
+    </div>
+    <div class="sec-cta reveal"><a class="btn btn-primary" href="#download">Make my desktop jealous</a></div>
+  </div>
+</section>
+
+<!-- ══════════════ FEATURES ══════════════ -->
+<section class="section" id="features" data-quip="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2 class="reveal">A pet. A world. The tools for both.</h2>
+      <p class="lead reveal d1">Other apps give you a mascot on rails. We, being extra, gave you the whole train set.</p>
+    </div>
+    <div class="grid">
+      <article class="card reveal"><span class="ic">🐾</span><h3>Buddy mode</h3><p>A character that hangs out on your desktop — wanders, idles, reacts. Suspiciously good company for a pile of polygons.</p></article>
+      <article class="card reveal d1"><span class="ic">🖼️</span><h3>Living-wallpaper scenes</h3><p>Perspective floors, walls, props and lighting that become your wallpaper — with someone actually living in it.</p></article>
+      <article class="card reveal d2"><span class="ic">🚪</span><h3>Multi-monitor worlds</h3><p>Every monitor is a room. Your buddy walks — and teleports through doors — between screens. We made commuting cute.</p></article>
+      <article class="card reveal"><span class="ic">🎨</span><h3>Character Studio</h3><p>Import your own 3D models and Mixamo animations. Creation is free, forever — gatekeeping is for wallpapers.</p></article>
+      <article class="card reveal d1"><span class="ic">🧩</span><h3>Scene Editor</h3><p>Design rooms with walls, doors, no-walk zones, anchors and lights. Then watch your buddy move in.</p></article>
+      <article class="card reveal d2"><span class="ic">🛍️</span><h3>Marketplace <span class="soon">coming soon</span></h3><p>Discover, share and <b>sell</b> characters, scenes and animation packs. By the community, for the community.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ PRICING ══════════════ -->
+<section class="section alt" id="pricing" data-quip="pricing">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2 class="reveal">Free to start. Suspiciously cheap to go further.</h2>
+      <p class="lead reveal d1">The whole app — buddy, scenes, full creation studio — costs nothing. No subscription. Ever.</p>
+    </div>
+    <div class="tiers">
+      <article class="tier reveal">
+        <h3>Free</h3><p class="price">$0</p>
+        <ul><li>Buddy mode</li><li>Scenes</li><li>Full Character Studio &amp; Scene Editor</li><li>Free marketplace content</li></ul>
+        <a class="btn btn-ghost" href="#download">Download free</a>
+      </article>
+      <article class="tier hl reveal d1">
+        <h3>Pro <span class="soon">coming soon</span></h3><p class="price">$5<small>–8 · one-time</small></p>
+        <ul><li>Unlimited multi-monitor scenes</li><li>Voice companion</li><li>Premium lighting &amp; effects</li><li>Multiple buddies at once</li></ul>
+        <a class="btn btn-primary" href="#marketplace">Get notified</a>
+      </article>
+      <article class="tier reveal d2">
+        <h3>Marketplace <span class="soon">coming soon</span></h3><p class="price">Earn</p>
+        <ul><li>Sell your characters &amp; scenes</li><li>Animation packs</li><li>Keep most of every sale</li><li>Built into the app</li></ul>
+        <a class="btn btn-ghost" href="#marketplace">Join the waitlist</a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ MARKETPLACE / WAITLIST ══════════════ -->
+<section class="section" id="marketplace" data-quip="marketplace">
+  <div class="wrap">
+    <div class="capture reveal">
+      <span class="pill">🛍️ marketplace — opening soon</span>
+      <h2>Be first through the door</h2>
+      <p class="lead">Get pinged when the marketplace and Pro land — and help vote on what we build next.</p>
+      <form class="wl-form" id="waitlist-form" novalidate>
+        <input type="email" id="wl-email" placeholder="you@email.com" autocomplete="email" required aria-label="Email address">
+        <button class="btn btn-primary" type="submit" id="wl-btn">Notify me</button>
+      </form>
+      <p class="wl-msg" id="wl-msg"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════ DOWNLOAD ══════════════ -->
+<section class="section dl" id="download" data-quip="download">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2 class="reveal">Adopt a buddy</h2>
+      <p class="lead reveal d1">Free for Windows. Sixty seconds from download to someone living on your screen.</p>
+    </div>
+    <div class="dl-card reveal">
+      <div class="dl-main">
+        <a class="btn btn-primary btn-xl" id="dl-btn" href="#" rel="noopener">⬇ Download for Windows — Free</a>
+        <p class="dl-meta"><span id="dl-version">v1.0.0</span> · <span id="dl-size">≈100 MB</span> · 64-bit ·
+          <a href="#" id="dl-portable">portable version</a></p>
+        <p class="dl-meta dim">macOS &amp; Linux — coming soon</p>
+      </div>
+      <ol class="dl-steps">
+        <li><b>Install</b> — run the setup. Windows may say "unknown publisher" → <i>More info → Run anyway</i>. It's safe; we're just not code-signed yet. It's shy.</li>
+        <li><b>Make a buddy</b> — pick a starter or import your own model in Character Studio.</li>
+        <li><b>Build its world</b> — drop it into a scene. Congratulations, your desktop is alive.</li>
+      </ol>
+    </div>
+    <p class="sysreq reveal">Requires Windows 10/11 (64-bit) · any modern GPU · roommates: 1 (virtual)</p>
+  </div>
+</section>
+</main>
+
+<!-- ══════════════ FOOTER ══════════════ -->
+<footer class="footer">
+  <div class="wrap foot-in">
+    <a class="logo" href="#top"><span class="paw sm">🐾</span><span>DeskBuddy</span></a>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="#showcase">See it</a><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#download">Download</a>
+    </nav>
+    <p>© 2026 DeskBuddy — a <b class="yuvexel">Yuvexel</b> project</p>
+  </div>
+</footer>
+
+<script type="module" src="js/buddy.js"></script>
+<script src="js/main.js" defer></script>
+</body>
+</html>
