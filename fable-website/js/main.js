@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  Page logic: gallery (from CONFIG.MEDIA), waitlist → live API, download
-//  buttons (from CONFIG), scroll reveals, card glow. No dependencies.
+//  buttons (from CONFIG), scroll reveals. No dependencies.
 // ═══════════════════════════════════════════════════════════════════════════
 (() => {
   const CFG = window.DB_CONFIG || {};
@@ -12,17 +12,7 @@
   }), { threshold: 0.12 });
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
-  // ── feature-card cursor glow ───────────────────────────────────────────────
-  document.querySelectorAll('.card').forEach(card => {
-    card.addEventListener('pointermove', (e) => {
-      const r = card.getBoundingClientRect();
-      card.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%');
-      card.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%');
-    });
-  });
-
   // ── gallery from CONFIG.MEDIA ──────────────────────────────────────────────
-  const PLACEHOLDER_ICONS = { 'buddy-desktop': '🐾', 'door-teleport': '🚪', 'scene-mode': '🖼️', studio: '🎨', 'scene-editor': '🧩', characters: '👥' };
   const gal = $('gallery');
   if (gal && Array.isArray(CFG.MEDIA)) {
     gal.innerHTML = CFG.MEDIA.map(m => {
@@ -32,8 +22,9 @@
         ? (m.kind === 'video'
             ? `<video class="g-media" src="${m.src}" autoplay muted loop playsinline></video>`
             : `<img class="g-media" src="${m.src}" alt="${m.label}" loading="lazy">`)
-        : `<div class="g-ph"><span class="g-ic">${PLACEHOLDER_ICONS[m.id] || '✨'}</span><b>${m.label}</b><span>${m.hint || 'capture coming soon'}</span></div>`;
-      return `<figure class="g-item${wide}"><div class="g-frame" style="padding-top:${pad}%">${media}</div><figcaption class="g-cap">${m.label}</figcaption></figure>`;
+        : `<div class="g-ph"><b>${m.label}</b><span>${m.hint || 'capture coming soon'}</span></div>`;
+      const cap = m.src ? `<figcaption class="g-cap">${m.label}</figcaption>` : '';
+      return `<figure class="g-item${wide}"><div class="g-frame" style="padding-top:${pad}%">${media}</div>${cap}</figure>`;
     }).join('');
   }
 
@@ -43,7 +34,7 @@
   if (sEl) sEl.textContent = CFG.SIZE || '';
   const wire = (el, url, kind) => {
     if (!el) return;
-    if (url) { el.href = url; el.removeAttribute('aria-disabled'); }
+    if (url) { el.href = url; }
     else el.addEventListener('click', (e) => {
       e.preventDefault();
       alert(`The ${kind} download is being hosted right now — check back very soon!\n(Or grab it from github.com/lykruban/deskbuddy releases.)`);
@@ -64,7 +55,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: val }),
       });
-      if (r.ok) { flash('🎉 You\'re on the list. The buddy is thrilled.', true); email.value = ''; }
+      if (r.ok) { flash('You\'re on the list. Talk soon.', true); email.value = ''; }
       else { const d = await r.json().catch(() => ({})); flash(d.error || 'Hmm, that didn\'t save. Try again?', false); }
     } catch { flash('Couldn\'t reach the server — try again in a moment.', false); }
     btn.disabled = false; btn.textContent = 'Notify me';
