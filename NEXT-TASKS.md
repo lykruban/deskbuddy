@@ -16,16 +16,17 @@ changes before committing; push to `main`; the server auto-updates via `git pull
 
 ---
 
-## 1. Website — build, integrate, deploy  ⭐ (in progress via Fable)
-- **What:** a stylized, interactive marketing + download site. Full brief in `website/FABLE-PROMPT.md`.
-- **How:** the user is generating it with Fable. When the code comes back: put it in `website/`
-  (replace `website/index.html` and add its assets), keep it a **static** build (served behind
-  Cloudflare Tunnel — see `DEPLOY-HANDOFF.md`), commit, push, then `git pull` on the server.
-- **Wire-ups:** waitlist form → `POST https://api.yuvexel.com/api/waitlist {email}` (endpoint EXISTS,
-  stores to `waitlist.json`); download button → the hosted installer URL (task 2); marketplace shown
-  as **"Coming soon"**.
-- **Needs from user:** the Fable output, and real screenshots/GIFs (task 4).
-- **Done when:** deskbuddy.yuvexel.com shows the new site, waitlist saves emails, download works.
+## 1. Website — BUILT in `fable-website/`; review → media → go live  ⭐
+- **What:** the from-scratch interactive site is DONE and verified (see `fable-website/README.md`):
+  live VRM buddy in the hero (walks, docks + follows on scroll, cycles characters, load-your-own,
+  sarcastic per-section speech bubbles), gallery with config-driven media slots, versus, features,
+  pricing, waitlist (already wired to `POST /api/waitlist`), full download flow, CTAs throughout.
+  All swappables live in `fable-website/config.js`. Headless-verified: buddy loads with zero errors.
+- **Remaining:** (a) user reviews the design and requests tweaks; (b) drop real screenshots/loops
+  into `fable-website/media/` + set `src` in config (task 4); (c) set `DOWNLOAD_URL` (task 2);
+  (d) go live: point the server's `deskbuddy-web` service root at `/opt/deskbuddy/fable-website`
+  (or copy over `website/`), then `git pull` + restart on the server.
+- **Done when:** deskbuddy.yuvexel.com serves it with real media and a working download.
 
 ## 2. Host the installer + wire the download link
 - **What:** a public URL for `DeskBuddy Setup 1.0.0.exe` so the site's download button works.
