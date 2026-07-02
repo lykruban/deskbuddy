@@ -1095,12 +1095,17 @@ function playBreakClip(clip) {
   sceneCurrentAction = next; sceneCurrentClip = clip;
 }
 
+let _prevSceneMoving = false;
 function updateIdleClip(dt, snap) {
+  // Re-roll the random idle pose on every arrival (walk → idle) so it varies each time.
+  if (_prevSceneMoving && !snap.moving) rollIdle();
+  _prevSceneMoving = snap.moving;
   const breakName = manifest.animationStates?.idleBreak;
   const breakClip = breakName ? resolveClip(breakName) : null;
   if (idleBreaking) {
     if (!snap.moving && performance.now() < idleBreakUntil) return;   // let the break finish
     idleBreaking = false; idleBreakElapsed = 0; nextBreakDelay = randBreakDelay();   // then settle back
+    rollIdle();   // …into a freshly-picked idle pose
   }
   const restingOnPose = !snap.moving && snap.clip == null;            // standing on the idle pose
   if (restingOnPose && breakClip) {
@@ -1381,8 +1386,30 @@ function resolveClip(name) {
   if (name == null || name === '') return null;
   return clips.find(c => c.name === name) || clips[parseInt(name, 10)] || null;
 }
+// ── Multiple idle poses ─────────────────────────────────────────────────────────
+// manifest.animationStates.idleList holds EXTRA idle clips (added via ＋ in Studio's
+// States tab). One is picked at random each time the character (re)enters idle and
+// STAYS picked until the next roll — clipForState must return a stable answer because
+// the scene evaluator calls it every frame (a per-call random would crossfade forever).
+let idleChoice = null, _lastIdleRoll = '';
+function idlePool() {
+  const map = manifest.animationStates || {};
+  return [map.idle, ...(Array.isArray(map.idleList) ? map.idleList : [])].filter(Boolean);
+}
+function rollIdle() {
+  const pool = idlePool();
+  if (!pool.length) { idleChoice = null; return; }
+  const cands = pool.length > 1 ? pool.filter(n => n !== _lastIdleRoll) : pool;
+  idleChoice = cands[Math.floor(Math.random() * cands.length)];
+  _lastIdleRoll = idleChoice;
+}
+
 function clipForState(state) {
   const map = manifest.animationStates || {};
+  if (state === 'idle') {
+    if (!idleChoice || !idlePool().includes(idleChoice)) rollIdle();   // stale/never rolled
+    return resolveClip(idleChoice) || clips[0] || null;
+  }
   // Custom states are stored in their own list, keyed by id; built-ins live in
   // animationStates. Either way, fall back to the idle clip, then the 1st clip.
   const custom = (manifest.customStates || []).find(c => c.id === state);
@@ -1403,6 +1430,7 @@ function enterState(state, temporary = false, durationMs = 3000) {
   if (state === currentState && !temporary) return;   // don't restart a looping state
   currentState = state;
   mixer.stopAllAction();
+  if (state === 'idle') rollIdle();   // fresh random pick from the idle pool each re-entry
   const clip = clipForState(state);
   currentClipName = clip?.name || null;
   currentAction = null;

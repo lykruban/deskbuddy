@@ -431,8 +431,10 @@ async function loadModel(fp, name) {
     $('sleep-lbl').textContent = sleepMin;
 
     // Restore state assignments
+    idleExtras = [];
     if (manifest.animationStates) {
       savedStateMap = manifest.animationStates;
+      idleExtras = Array.isArray(savedStateMap.idleList) ? savedStateMap.idleList.filter(Boolean) : [];
     }
     savedCustomStates = Array.isArray(manifest.customStates)
       ? manifest.customStates.map(c => ({ ...c }))
@@ -807,6 +809,7 @@ const STATE_DEFS = [
 
 let savedStateMap = {};
 let savedCustomStates = [];   // [{ id, label, clip, app }]
+let idleExtras = [];          // extra idle poses (Idle 2, 3, …) — one is picked at random
 
 function updateStateRows() {
   const container = $('state-rows'); container.innerHTML = '';
@@ -839,13 +842,42 @@ function updateStateRows() {
     tag.textContent = def.loop ? 'loop' : '×1';
 
     row.append(label, sel, play, tag);
+
+    // Idle gets a ＋ to add extra poses — the app picks one at random each time it idles.
+    if (def.id === 'idle') {
+      const add = document.createElement('button');
+      add.className = 'state-play'; add.textContent = '＋';
+      add.title = 'Add another idle pose (one is picked at random each time)';
+      add.onclick = () => { idleExtras.push(''); updateStateRows(); };
+      row.appendChild(add);
+    }
     container.appendChild(row);
+
+    if (def.id === 'idle') idleExtras.forEach((name, i) => {
+      const r = document.createElement('div'); r.className = 'state-row';
+      const l = document.createElement('span'); l.className = 'state-label';
+      l.textContent = `Idle ${i + 2}`; l.style.color = 'var(--muted)';
+      const s = document.createElement('select');
+      s.appendChild(new Option('— none —', ''));
+      allClips.forEach(c => s.appendChild(new Option(c.name, c.name)));
+      s.value = name || '';
+      s.onchange = () => { idleExtras[i] = s.value; };
+      const p = document.createElement('button'); p.className = 'state-play';
+      p.textContent = '▶'; p.title = 'Preview';
+      p.onclick = () => { const clip = allClips.find(c => c.name === s.value); if (clip) previewClip(clip, false); };
+      const x = document.createElement('button'); x.className = 'state-play';
+      x.textContent = '✕'; x.title = 'Remove this idle pose'; x.style.color = 'var(--red)';
+      x.onclick = () => { idleExtras.splice(i, 1); updateStateRows(); };
+      r.append(l, s, p, x);
+      container.appendChild(r);
+    });
   });
 }
 
 function collectStateMap() {
   const map = {};
   STATE_DEFS.forEach(d => { const el = $(`state-${d.id}`); if (el) map[d.id] = el.value || null; });
+  map.idleList = idleExtras.filter(Boolean);   // extra idle poses (random pick at runtime)
   return map;
 }
 
