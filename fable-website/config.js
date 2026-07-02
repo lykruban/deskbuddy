@@ -5,10 +5,9 @@ window.DB_CONFIG = {
   // Where the API lives (waitlist form posts to `${API_BASE}/api/waitlist`).
   API_BASE: 'https://api.yuvexel.com',
 
-  // The hosted installer. Set to the real URL once it's on GitHub Releases / the server.
-  // While empty, the download buttons explain hosting is being set up.
-  DOWNLOAD_URL: '',            // e.g. 'https://github.com/lykruban/deskbuddy/releases/download/v1.0.0/DeskBuddy.Setup.1.0.0.exe'
-  PORTABLE_URL: '',            // e.g. '.../DeskBuddy-Portable-1.0.0.exe'
+  // The hosted installer (GitHub Release assets).
+  DOWNLOAD_URL: 'https://github.com/lykruban/deskbuddy/releases/download/v1.0.0/DeskBuddy-Setup-1.0.0.exe',
+  PORTABLE_URL: 'https://github.com/lykruban/deskbuddy/releases/download/v1.0.0/DeskBuddy-Portable-1.0.0.exe',
   VERSION: 'v1.0.0',
   SIZE: '≈100 MB',
 
