@@ -1,36 +1,29 @@
-# DeskBuddy website
+# DeskBuddy website (fable-website)
 
-Static site served at **https://deskbuddy.yuvexel.com** (see `DEPLOY-HANDOFF.md` — a tiny static
-server behind Cloudflare Tunnel points at this folder).
+A minimalist, dark, static marketing + download site. Typography-led, hairline borders,
+one restrained violet→cyan gradient accent, sarcastic-but-kind copy. No 3D/WebGL — the
+earlier live-VRM hero was removed by request (git history has it if ever wanted back).
 
-## Files
-| file | what |
-|---|---|
-| `index.html` | the whole page (nav → hero → gallery → features → compare → pricing → marketplace/waitlist → download → footer) |
-| `config.js`  | **THE config block** — download URLs, version/size, API base, hero avatars, gallery media manifest. Edit this, not the code. |
-| `site.css`   | design system ("cozy little OS": violet→cyan glow, glass chrome, the dual-monitor rig) |
-| `hero.js`    | the live 3D buddy (three.js + @pixiv/three-vrm via CDN import map) — idles, follows the cursor, blinks, hops when clicked, walks between the two hero monitors through the bezel gap |
-| `site.js`    | everything else: gallery from the media manifest, waitlist POST, download wiring + OS detect, reveals, taskbar clocks, announcements toast |
-| `media/`     | (create it) drop real screenshots/clips here and point `MEDIA[].src` at them |
+## Structure
+```
+fable-website/
+├─ index.html        # semantic markup, all sections
+├─ config.js         # ⚙️ EVERYTHING swappable: API base, download URLs, media
+├─ css/style.css     # minimalist dark design system
+├─ js/main.js        # gallery builder, waitlist → API, download buttons, reveals
+└─ media/            # drop real screenshots/loops here, then set src in config.js MEDIA
+```
 
 ## Preview locally
-```
-npx http-server website -p 8080
-```
-(or any static server — `python -m http.server 8080` from inside `website/` works too), then open
-http://localhost:8080. Everything external (three.js, VRM avatars, fonts) loads from CDNs, so you
-need to be online.
+Any static server (e.g. `npx serve .` or `python -m http.server 8090`).
 
-## Flip-the-switch checklist
-1. **Download live:** set `DOWNLOAD_URL` (+ `PORTABLE_URL`) in `config.js` to the GitHub Release
-   asset links. Until then the buttons show "Almost ready — join the waitlist".
-2. **Real media:** drop captures into `website/media/`, set each `MEDIA[].src` in `config.js`
-   (placeholders list each slot's ideal capture format).
-3. **Own avatars:** add `{ name, url }` entries to `AVATARS` (relative paths OK; `.vrm` gets the
-   full walk/gaze/blink treatment, `.glb` gets bob+slide).
-4. Deploy: commit + push, then on the server `cd /opt/deskbuddy && git pull` (static server picks
-   it up immediately).
+## Go live (deskbuddy.yuvexel.com)
+The server serves `/opt/deskbuddy/website`. Either point the `deskbuddy-web` service root at
+`/opt/deskbuddy/fable-website`, or copy these files over `website/`. Then `git pull` on the
+server. No build step.
 
-## Wired to the live backend
-- Waitlist form → `POST {API_BASE}/api/waitlist {email}` (already deployed).
-- Hero toast → `GET {API_BASE}/api/announcements` (latest item, fails silently).
+## Wire-ups
+- **Waitlist** posts to `${API_BASE}/api/waitlist` (endpoint live at api.yuvexel.com).
+- **Download buttons** read `DOWNLOAD_URL` / `PORTABLE_URL` in `config.js` — set them once the
+  installer is hosted (GitHub Release recommended; see NEXT-TASKS.md task 2).
+- **Gallery**: drop captures in `media/`, set each item's `src` in `config.js`.
