@@ -1613,6 +1613,20 @@ canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!moveMod
 let _dragMoved = false;
 if (NATIVE_FORWARD) {
   let dragging = false, sx = 0, sy = 0, wx = 0, wy = 0;
+  // Grab animation: while the buddy is actually being dragged, play the "Grabbed" state
+  // (States tab in Studio) and pause the auto-evaluator so it can't stomp it. If no
+  // Grabbed clip is assigned, the animation just stays as-is.
+  let _grabbed = false;
+  const grabStart = () => {
+    if (_grabbed) return; _grabbed = true;
+    suppressAutoUntil = Infinity;
+    if (resolveClip((manifest.animationStates || {}).grabbed)) enterState('grabbed');
+  };
+  const grabEnd = () => {
+    if (!_grabbed) return; _grabbed = false;
+    suppressAutoUntil = performance.now() + 300;   // brief settle, then the evaluator resumes
+    enterState('idle');                            // also re-rolls the random idle pose
+  };
   canvas.addEventListener('mousedown', async (e) => {
     if (e.button !== 0 || wallpaperMode || moveMode) return;
     sx = e.screenX; sy = e.screenY; _dragMoved = false;
@@ -1621,10 +1635,10 @@ if (NATIVE_FORWARD) {
   window.addEventListener('mousemove', (e) => {
     if (!dragging) return;
     const dx = e.screenX - sx, dy = e.screenY - sy;
-    if (!_dragMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) { _dragMoved = true; canvas.style.cursor = 'grabbing'; }
+    if (!_dragMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) { _dragMoved = true; canvas.style.cursor = 'grabbing'; grabStart(); }
     if (_dragMoved) window.deskbuddy.moveOverlayTo(wx + dx, wy + dy);
   });
-  const endDrag = () => { if (dragging) { dragging = false; canvas.style.cursor = 'grab'; } };
+  const endDrag = () => { if (dragging) { dragging = false; canvas.style.cursor = 'grab'; grabEnd(); } };
   window.addEventListener('mouseup', endDrag);
   window.addEventListener('blur', endDrag);
   // Grab affordance when idle over the buddy (scene mode overrides this for prop hovers).

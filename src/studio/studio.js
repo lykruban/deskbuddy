@@ -805,6 +805,7 @@ const STATE_DEFS = [
   { id: 'sitting',  label: 'Sitting',      loop: true  },
   { id: 'sleeping', label: 'Sleeping',     loop: true  },
   { id: 'clicked',  label: 'Clicked',      loop: false },
+  { id: 'grabbed',  label: 'Grabbed',      loop: true  },   // plays while dragging the buddy
 ];
 
 let savedStateMap = {};
