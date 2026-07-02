@@ -87,8 +87,25 @@ function wireRendererLogs(win, tag) {
   wc.on('console-message', (_e, lvl, msg, line, src) => console.log(`[${tag}]`, msg, src ? `(${String(src).split('/').pop()}:${line})` : ''));
   wc.on('preload-error', (_e, p, err) => console.error(`[${tag} preload-error]`, p, err && err.message));
   wc.on('did-fail-load', (_e, code, desc, url) => console.error(`[${tag} did-fail-load]`, code, desc, url));
-  wc.on('render-process-gone', (_e, d) => console.error(`[${tag} render-gone]`, d && d.reason));
+  // Crash resilience: if a renderer dies (GPU hiccup, OOM, driver reset), log it to
+  // userData/crashes.log for diagnosis and RELOAD the window instead of leaving it dead.
+  wc.on('render-process-gone', (_e, d) => {
+    const reason = d && d.reason;
+    console.error(`[${tag} render-gone]`, reason);
+    try { fs.appendFileSync(path.join(app.getPath('userData'), 'crashes.log'), `${new Date().toISOString()} ${tag} render-gone: ${reason}\n`); } catch {}
+    if (reason !== 'clean-exit' && reason !== 'killed' && !win.isDestroyed()) {
+      setTimeout(() => { try { wc.reload(); } catch {} }, 600);
+    }
+  });
+  wc.on('unresponsive', () => console.error(`[${tag}] unresponsive`));
 }
+// GPU / utility process crashes (the transparent overlay leans hard on the compositor).
+app.on('child-process-gone', (_e, d) => {
+  if (d && d.reason !== 'clean-exit' && d.reason !== 'killed') {
+    console.error('[child-process-gone]', d.type, d.reason);
+    try { fs.appendFileSync(path.join(app.getPath('userData'), 'crashes.log'), `${new Date().toISOString()} child ${d.type}: ${d.reason}\n`); } catch {}
+  }
+});
 function createOverlayWindow() {
   const s = loadSettings();
   overlayWindow = new BrowserWindow({
@@ -123,7 +140,7 @@ function createOverlayWindow() {
 function createStudioWindow() {
   if (studioWindow) { studioWindow.focus(); return; }
   studioWindow = new BrowserWindow({
-    width: 1160, height: 740, title: 'DeskBuddy Studio',
+    width: 1200, height: 760, minWidth: 1040, minHeight: 640, title: 'DeskBuddy Studio',
     webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(__dirname, 'preload.js') },
   });
   wireRendererLogs(studioWindow, 'studio');
@@ -168,6 +185,10 @@ function trayTemplate() {
     // Click-to-move (display targeting now lives in Character Studio → Scene settings).
     { label: 'Click to Move', type: 'checkbox', checked: loadSettings().clickToMove === true,
       click: () => { const s = loadSettings(); s.clickToMove = !(s.clickToMove === true); saveSettings(s); sendCmd('clickmove'); refreshTray(); } },
+    // Random Walking — OFF parks the character in scenes (idle/idle-breaks keep playing).
+    // Independent of Click to Move: turning this off does NOT auto-enable click-to-move.
+    { label: 'Random Walking', type: 'checkbox', checked: loadSettings().sceneWander !== false,
+      click: () => { const s = loadSettings(); s.sceneWander = !(s.sceneWander !== false); saveSettings(s); sendCmd('wander'); refreshTray(); } },
     // (Behind Desktop Icons removed for now — reparenting the transparent, GPU-accelerated
     // overlay into the WorkerW wallpaper layer crashes Chromium's compositor. The scene just
     // floats in front of the icons until that's reworked.)

@@ -75,6 +75,7 @@ let lightMode = 'medium';
 const giOn = () => lightMode === 'medium' || lightMode === 'high';
 let propClicks = false;   // can the user click props to trigger their animations? (default OFF — desktop stays fully click-through)
 let clickToMove = false; // click anywhere on the floor → the character walks there
+let sceneWander = true;  // Random Walking: off = the character parks (independent of click-to-move)
 // Windows/macOS: renderer drives per-hover click capture (see mousemove handler). Tracks
 // whether main is currently capturing clicks so we only IPC on change.
 const NATIVE_FORWARD = window.deskbuddy.platform && window.deskbuddy.platform !== 'linux';
@@ -923,6 +924,7 @@ async function loadScene(p) {
     if (!modelRoot || !mixer) { toast('Load a character first'); return; }
     if (overlayWalkSpeed > 0) { activeScene.wander = activeScene.wander || {}; activeScene.wander.walkSpeed = overlayWalkSpeed; }
     behavior = createBehavior(activeScene);
+    behavior.setWander(sceneWander);   // apply the tray Random Walking toggle to this scene
     sceneShadowCfg = normalizeShadow(activeScene.shadow);
     applySceneCharacterLighting(sceneShadowCfg);
 
@@ -1162,6 +1164,9 @@ function commitSceneTravel(snap) {
 }
 
 function renderScene(dt) {
+  // Scene loading sets activeScene before the behavior exists (there are awaits in between),
+  // so a frame can land here early — skip it rather than crash the render loop.
+  if (!behavior || !mixer) return;
   const snap = behavior.update(dt);
   updateIdleClip(dt, snap);
   commitSceneTravel(snap);                                   // Move-on clips travel for real
@@ -1648,6 +1653,13 @@ window.menu = async (action) => {
     toast(clickToMove ? 'Click to Move ON — click the floor to send the character (desktop clicks are captured)' : 'Click to Move OFF');
     return;
   }
+  if (action === 'wander') {
+    sceneWander = !sceneWander; persistSettings({ sceneWander });
+    behavior?.setWander(sceneWander);
+    toast(sceneWander ? 'Random Walking ON — the character roams on its own'
+                      : 'Random Walking OFF — the character stays put (Click to Move still works if enabled)');
+    return;
+  }
   if (action.startsWith('quality:')) { applyQuality(action.slice(8)); persistSettings({ quality }); toast('Quality: ' + quality); return; }
   if (action.startsWith('fps:'))     { applyFps(parseInt(action.slice(4), 10)); persistSettings({ fps: targetFps }); toast(targetFps + ' FPS'); return; }
   if (action === 'through')  { passThrough = !passThrough; window.deskbuddy.setIgnoreMouse(passThrough); toast(passThrough ? 'Click-through ON' : 'Click-through OFF'); return; }
@@ -1761,6 +1773,7 @@ requestAnimationFrame(animate);
             : 'medium';
   propClicks = !!s.propClicks;   // default OFF — enabling makes the scene capture clicks
   clickToMove = s.clickToMove === true;   // default OFF
+  sceneWander = s.sceneWander !== false;  // default ON (Random Walking)
   applyQuality(s.quality || 'medium');
   applyFps(s.fps || 60);
   if (s.activeCharacter) { await loadCharacter(s.activeCharacter); if (s.activeScene) loadScene(s.activeScene); }

@@ -2367,6 +2367,12 @@ window.studioResetSendLink = async () => {
   const email = _gel('srx-email').value.trim();
   if (!email) { _rxErr('Enter your email'); return; }
   let r; try { r = await window.deskbuddy.authForgot({ email }); } catch { r = { ok: false }; }
+  if (r?.emailAvailable === false) {
+    // The server has no email provider yet — don't fake it; steer to the recovery code.
+    studioResetMode('code');
+    _rxErr('Email reset isn\'t set up yet — use your recovery code instead.');
+    return;
+  }
   if (r?.devToken) {
     _resetDevToken = r.devToken;
     _gel('srx-devlink').style.display = 'flex';

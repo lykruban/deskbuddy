@@ -197,6 +197,8 @@ export function createBehavior(scenepack, rng = Math.random) {
     return { u, v };
   }
   const wander  = scenepack.wander || {};
+  // Tray "Random Walking" toggle: true/false forces roaming on/off; null follows the scenepack.
+  let wanderOverride = null;
   const start   = anchors.find(a => a.weight > 0) || anchors[0]
                 || { id: null, u: 0.5, v: 0.7, animation: null, facing: 'front' };
 
@@ -257,12 +259,16 @@ export function createBehavior(scenepack, rng = Math.random) {
 
     if (st.phase === 'idle') {
       st.timer += dt;
-      const due = dueScheduled();
+      // Roam gate: with Random Walking toggled off, the character stays parked — no wandering
+      // and no scheduled visits. User-initiated moves (goTo/goToAnchor via click-to-move or
+      // prop clicks) still work, and idle/idle-break animations keep playing.
+      const roamOn = wanderOverride == null ? (wander.enabled !== false) : wanderOverride;
+      const due = roamOn ? dueScheduled() : null;
       if (due) {
         beginWalk(due.anchor, true);
         due.t = 0; st.timer = 0;
       } else {
-        const canWander = wander.enabled !== false
+        const canWander = roamOn
           && anchors.some(a => a.weight > 0 && a.id !== st.current?.id);
         if (canWander && st.timer >= st.dwell) {
           const next = pickAnchor(anchors, st.current?.id);
@@ -354,5 +360,8 @@ export function createBehavior(scenepack, rng = Math.random) {
     st.pos.u = c.u; st.pos.v = c.v;
   }
 
-  return { update, goTo, goToAnchor, translate, state: st };
+  // Force roaming on/off from outside (tray toggle); pass null to follow the scenepack again.
+  function setWander(v) { wanderOverride = (v == null) ? null : !!v; }
+
+  return { update, goTo, goToAnchor, translate, setWander, state: st };
 }

@@ -56,6 +56,34 @@ function startServer(dataDir) {
   const requireAuth = (req, res, next) => req.user ? next() : res.status(401).json({ error: 'Sign in required' });
   app.use(auth);
 
+  // ── Hardening (dependency-free) ────────────────────────────────────────────────
+  // Security headers.
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  });
+  // Rate-limit the auth endpoints — keyed by the REAL client IP. Behind Cloudflare Tunnel
+  // every request reaches Express from localhost, so keying on req.ip would put ALL users
+  // in one shared bucket and lock everyone out ("Too many requests" for everybody). Use
+  // CF-Connecting-IP (Cloudflare) / X-Forwarded-For first.
+  const clientIp = (req) => req.headers['cf-connecting-ip']
+    || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.ip || 'unknown';
+  const RL_WINDOW = 10 * 60 * 1000, RL_MAX = 40;   // 40 auth requests / 10 min / real IP
+  const rlBuckets = new Map();
+  setInterval(() => { const now = Date.now(); for (const [k, b] of rlBuckets) if (now - b.start > RL_WINDOW) rlBuckets.delete(k); }, 60 * 1000).unref?.();
+  app.use('/api/auth', (req, res, next) => {
+    if (req.method !== 'POST') return next();
+    const key = clientIp(req);
+    const now = Date.now();
+    let b = rlBuckets.get(key);
+    if (!b || now - b.start > RL_WINDOW) { b = { start: now, n: 0 }; rlBuckets.set(key, b); }
+    if (++b.n > RL_MAX) return res.status(429).json({ error: 'Too many attempts — try again in a few minutes' });
+    next();
+  });
+
   app.post('/api/auth/signup', (req, res) => {
     const { username, password, email } = req.body || {};
     const r = users.create(username, password, email);
@@ -78,6 +106,10 @@ function startServer(dataDir) {
   // provider is configured (on the deployed server), DEV mode surfaces the link in the
   // response so the flow is testable locally.
   app.post('/api/auth/forgot', async (req, res) => {
+    // No email provider configured (and not dev) → be honest with the client instead of
+    // pretending an email is coming: it tells the user to use their recovery code.
+    const EMAIL_ENABLED = !!(process.env.SMTP_URL || process.env.SENDGRID_API_KEY);
+    if (!EMAIL_ENABLED && !DEV_SURFACE) return res.json({ ok: true, emailAvailable: false });
     const { email } = req.body || {};
     const r = users.createResetToken(email);
     if (r) {
