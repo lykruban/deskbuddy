@@ -1818,7 +1818,17 @@ requestAnimationFrame(animate);
   sceneWander = s.sceneWander !== false;  // default ON (Random Walking)
   applyQuality(s.quality || 'medium');
   applyFps(s.fps || 60);
-  if (s.activeCharacter) { await loadCharacter(s.activeCharacter); if (s.activeScene) loadScene(s.activeScene); }
-  else emptyEl.style.display = 'flex';
+  // Launch straight into buddy mode: load the saved character, falling back to the first
+  // character in the library (fresh install / stale saved path) — so the buddy appears
+  // immediately instead of only after entering and exiting a scene.
+  if (s.activeCharacter) await loadCharacter(s.activeCharacter);
+  if (!modelRoot) {
+    try {
+      const chars = await window.deskbuddy.listCharacters();
+      if (chars?.length) { await loadCharacter(chars[0].path); if (modelRoot) persistSettings({ activeCharacter: chars[0].path }); }
+    } catch {}
+  }
+  if (modelRoot && s.activeScene) loadScene(s.activeScene);
+  if (!modelRoot) emptyEl.style.display = 'flex';
 })();
 window.deskbuddy.onCharacterChanged(loadCharacter);
