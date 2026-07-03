@@ -1324,7 +1324,7 @@ function newForeground(u, v) {
     image: null, u, v, scale: 1, fullscreen: false, layer: 0,
     anchor: { enabled: false, animation: null, facing: 'auto', offset: { x: 0, y: 0 }, repeatMinutes: 0, dwell: 0 } };
 }
-function newDoor(u, v) { return { id: seRnd('dr'), u, v }; }
+function newDoor(u, v) { return { id: seRnd('dr'), u, v, effect: 'portal' }; }
 const findAnchor = (id) => SE.scene.anchors.find(a => a.id === id);
 const findFg = (id) => SE.scene.foregrounds.find(f => f.id === id);
 const findDoor = (id) => (SE.scene.doors || []).find(d => d.id === id);
@@ -1908,8 +1908,14 @@ function refreshDoorUI() {
   else ds.forEach((d, i) => list.appendChild(chip('Door ' + (i + 1), '#34d399', 'entry',
     d.id === SE.sel && SE.selKind === 'door', () => selectDoor(d.id))));
   const ed = $('scene-door-edit'); if (!ed) return;
-  ed.style.display = ((SE.selKind === 'door') && findDoor(SE.sel)) ? 'block' : 'none';
+  const sel = (SE.selKind === 'door') && findDoor(SE.sel);
+  ed.style.display = sel ? 'block' : 'none';
+  if (sel) { const fx = $('door-effect'); if (fx) fx.value = sel.effect || 'portal'; }
 }
+window.sceneDoorEffect = (v) => {
+  const d = findDoor(SE.sel); if (!d) return;
+  d.effect = v; setStatus('Door effect: ' + v);
+};
 window.sceneDoorDelete = () => {
   const i = (SE.scene.doors || []).findIndex(d => d.id === SE.sel); if (i < 0) return;
   SE.scene.doors.splice(i, 1); SE.sel = null; SE.selKind = null; refreshDoorUI(); drawStage(); setStatus('Door deleted');

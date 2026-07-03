@@ -213,8 +213,11 @@ export function normalizeWall(w) {
 
 // A DOOR: a floor point (u,v) marking where the character ENTERS this room/screen. When the
 // character wanders into a screen it heads in via that screen's door (and the scene starts there).
+// `effect` picks the cross-screen transition rendered at the door (Scene Editor dropdown).
+export const DOOR_EFFECTS = ['portal', 'particles', 'fade', 'beam', 'vortex', 'poof', 'none'];
 export function normalizeDoor(dr) {
-  return { id: (typeof dr?.id === 'string' && dr.id) ? dr.id : rndZ('dr'), u: num(dr?.u, 0.5), v: num(dr?.v, 0.95) };
+  return { id: (typeof dr?.id === 'string' && dr.id) ? dr.id : rndZ('dr'), u: num(dr?.u, 0.5), v: num(dr?.v, 0.95),
+    effect: DOOR_EFFECTS.includes(dr?.effect) ? dr.effect : 'portal' };
 }
 
 // A single ROOM: one display's worth of a scene — its own wallpaper image, perspective

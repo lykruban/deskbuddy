@@ -685,6 +685,215 @@ function renderSceneGlows() {
   }
 }
 
+// ── Door transition FX ──────────────────────────────────────────────────────────
+// Renders the chosen effect (door.effect: portal/particles/fade/beam/vortex/poof) at the
+// door while the character teleports between screens. Additive canvas-texture sprites in
+// screen space — same technique as the light glows, so it's cheap at any quality level.
+let sceneCharShrink = 1;   // placeCharacter multiplies scale by this during swallow-y effects
+let fxScene = null, fxRing = null, fxRingMat = null, fxCore = null, fxCoreMat = null,
+    fxBeamM = null, fxBeamMat = null, fxParts = null, fxOrbTex = null, fxSmokeTex = null,
+    fxPrevPhase = null, fxSeed = 0;
+const FX_VIOLET = new THREE.Color('#7c5cff'), FX_CYAN = new THREE.Color('#36d6c4');
+function fxCanvasTex(draw) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; draw(c.getContext('2d'));
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function ensureFX() {
+  if (fxScene) return;
+  fxScene = new THREE.Scene();
+  fxOrbTex = fxCanvasTex(x => { const g = x.createRadialGradient(64,64,0,64,64,64);
+    g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(.4,'rgba(255,255,255,.4)'); g.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0,0,128,128); });
+  fxSmokeTex = fxCanvasTex(x => { const g = x.createRadialGradient(64,64,0,64,64,64);
+    g.addColorStop(0,'rgba(255,255,255,.85)'); g.addColorStop(.7,'rgba(255,255,255,.3)'); g.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0,0,128,128); });
+  const ringTex = fxCanvasTex(x => { x.strokeStyle = '#fff'; x.lineWidth = 7;
+    x.shadowColor = 'rgba(255,255,255,.9)'; x.shadowBlur = 14;
+    x.beginPath(); x.arc(64,64,46,0,7); x.stroke(); });
+  const beamTex = fxCanvasTex(x => { const g = x.createLinearGradient(0,0,128,0);
+    g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(.5,'rgba(255,255,255,.9)'); g.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0,0,128,128); });
+  const mk = (tex) => { const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true,
+      depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1,1), mat); mesh.visible = false;
+    fxScene.add(mesh); return [mesh, mat]; };
+  [fxRing, fxRingMat] = mk(ringTex);
+  [fxCore, fxCoreMat] = mk(fxOrbTex);
+  [fxBeamM, fxBeamMat] = mk(beamTex);
+  fxParts = [];
+  for (let i = 0; i < 22; i++) { const [mesh, mat] = mk(fxOrbTex);
+    fxParts.push({ mesh, mat, a: Math.random() * 6.28, r: Math.random(), s: .5 + Math.random() }); }
+}
+function hideFX() { if (fxScene) fxScene.traverse(o => { if (o.isMesh) o.visible = false; }); }
+function renderDoorFX(tele) {
+  if (!tele || tele.effect === 'none' || !activeScene) { fxPrevPhase = null; hideFX(); return; }
+  ensureFX();
+  if (fxPrevPhase !== tele.phase) fxSeed = Math.random() * 6.28;   // reseed per door side
+  fxPrevPhase = tele.phase;
+  hideFX();
+  const room = resolveRoom(tele.u);
+  const f = room.floor, reg = room.region, aspect = lastW / lastH;
+  const sp = floorToCanvas(f, room.u, tele.v, reg);
+  const chH = (sceneModel ? sceneModel.height * sceneBaseScale : 0.9) * depthScaleAt(f, tele.v) * reg.h;
+  const cx = (sp.x * 2 - 1) * aspect, cyFeet = 1 - sp.y * 2, cy = cyFeet + chH * 0.5;
+  const p = tele.p;                                                     // 0→1 within this half
+  const open = tele.phase === 'out' ? (p < .3 ? p / .3 : 1) : (p > .7 ? (1 - p) / .3 : 1);
+  const pulse = Math.sin(p * Math.PI);
+  const t = performance.now() / 300;
+  const orb = (P) => { P.mat.map = fxOrbTex; P.mat.blending = THREE.AdditiveBlending; P.mesh.visible = true; };
+  const E = tele.effect;
+  if (E === 'portal' || E === 'vortex') {
+    const R = chH * (E === 'vortex' ? .8 : .72) * Math.max(open, 0.001);
+    fxRing.visible = true; fxRing.position.set(cx, cy, .5); fxRing.rotation.z = t * (E === 'vortex' ? 3 : 1.4);
+    fxRing.scale.set(R * 1.25, R * 1.75, 1);
+    fxRingMat.color.copy(FX_CYAN).lerp(FX_VIOLET, .5 + .5 * Math.sin(t)); fxRingMat.opacity = .95 * open;
+    fxCore.visible = true; fxCore.position.set(cx, cy, .5); fxCore.scale.set(R * 1.6, R * 2.1, 1);
+    fxCoreMat.color.copy(FX_VIOLET); fxCoreMat.opacity = .5 * open;
+    for (let i = 0; i < 10; i++) { const P = fxParts[i]; orb(P);
+      const a = fxSeed + P.a + t * (1 + P.s) * (E === 'vortex' ? 2.2 : 1);
+      P.mesh.position.set(cx + Math.cos(a) * R * .8, cy + Math.sin(a) * R * 1.15, .5);
+      const s = chH * .12 * P.s * open; P.mesh.scale.set(s, s, 1);
+      P.mat.color.copy(i % 2 ? FX_CYAN : FX_VIOLET); P.mat.opacity = .8 * open; }
+  } else if (E === 'particles') {
+    for (const [i, P] of fxParts.entries()) { orb(P);
+      const k = (p * 1.3 + P.r) % 1, a = fxSeed + P.a;
+      P.mesh.position.set(cx + Math.cos(a) * chH * .55 * (1 - k),
+                          cyFeet + chH * (.12 + P.r * .75) * (1 - k * .6), .5);
+      const s = chH * .09 * P.s * pulse; P.mesh.scale.set(s, s, 1);
+      P.mat.color.copy(i % 2 ? FX_CYAN : FX_VIOLET); P.mat.opacity = .9 * pulse * (1 - k * .5); }
+  } else if (E === 'fade') {
+    fxBeamM.visible = true; fxBeamM.position.set(cx, cyFeet + chH * .55, .5);
+    fxBeamM.scale.set(chH * .55, chH * 1.3, 1);
+    fxBeamMat.color.copy(FX_VIOLET).lerp(FX_CYAN, .5); fxBeamMat.opacity = .45 * pulse;
+  } else if (E === 'beam') {
+    fxBeamM.visible = true; fxBeamM.position.set(cx, cyFeet + chH * .85, .5);
+    fxBeamM.scale.set(chH * .5, chH * 2.3, 1);
+    fxBeamMat.color.set('#9adcff'); fxBeamMat.opacity = .75 * pulse;
+    for (let i = 0; i < 8; i++) { const P = fxParts[i]; orb(P);
+      const k = (p * 2 + P.r) % 1;
+      P.mesh.position.set(cx + Math.cos(fxSeed + P.a) * chH * .18, cyFeet + k * chH * 1.5, .5);
+      const s = chH * .07 * P.s; P.mesh.scale.set(s, s, 1);
+      P.mat.color.copy(FX_CYAN); P.mat.opacity = .8 * pulse * (1 - k); }
+  } else if (E === 'poof') {
+    for (let i = 0; i < 14; i++) { const P = fxParts[i];
+      P.mat.map = fxSmokeTex; P.mat.blending = THREE.NormalBlending; P.mesh.visible = true;
+      const a = fxSeed + P.a, k = Math.min(1, p * 1.25);
+      P.mesh.position.set(cx + Math.cos(a) * chH * .5 * k,
+                          cyFeet + chH * (.22 + Math.abs(Math.sin(a)) * .55 * k), .5);
+      const s = chH * (.22 + .42 * k) * P.s; P.mesh.scale.set(s, s, 1);
+      P.mat.color.set('#b9c1d4'); P.mat.opacity = .6 * (1 - k); }
+  }
+  // clip to the door's room so nothing bleeds across the monitor seam
+  const clip = sceneClipRect();
+  if (clip) { renderer.setScissorTest(true); renderer.setScissor(clip.x, clip.y, clip.w, clip.h); }
+  renderer.render(fxScene, sceneCam);
+  if (clip) renderer.setScissorTest(false);
+}
+
+// ── Teleport snapshot pipeline ───────────────────────────────────────────────────
+// Alpha-fading a 3D model looks broken (overlapping parts blend into an X-ray mess), so
+// during a door teleport we render the LIVE animated character into an offscreen texture
+// every frame, hide the real model, and draw the texture as a grid of screen-space tiles.
+// The effects then move/spin/scatter the TILES — image stays clean, animation keeps playing.
+let teleRT = null, teleScene = null, teleCells = null, teleRTW = 0, teleRTH = 0, teleHidden = false;
+const TELE_GX = 9, TELE_GY = 12;
+function ensureTeleFX() {
+  const sz = new THREE.Vector2(); renderer.getDrawingBufferSize(sz);
+  // Cap the capture resolution — a spanned multi-monitor buffer can be 6720×2160+, and a
+  // full-size extra render target is a real GPU-memory hit (the tiles are small and moving,
+  // so a capped capture is visually identical). UVs are screen-fractions, so any size works.
+  const capW = Math.min(sz.x, 2560);
+  sz.set(capW, Math.round(sz.y * (capW / sz.x)));
+  if (!teleRT) {
+    teleRT = new THREE.WebGLRenderTarget(sz.x, sz.y);
+    teleRT.texture.colorSpace = THREE.SRGBColorSpace;
+    teleScene = new THREE.Scene();
+    teleCells = [];
+    for (let gy = 0; gy < TELE_GY; gy++) for (let gx = 0; gx < TELE_GX; gx++) {
+      const mat = new THREE.MeshBasicMaterial({ map: teleRT.texture, transparent: true, depthTest: false, depthWrite: false });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+      teleScene.add(mesh);
+      teleCells.push({ mesh, mat, gx, gy, seed: Math.random() });
+    }
+    teleRTW = sz.x; teleRTH = sz.y;
+  } else if (sz.x !== teleRTW || sz.y !== teleRTH) { teleRT.setSize(sz.x, sz.y); teleRTW = sz.x; teleRTH = sz.y; }
+}
+// Capture the live model into the RT (opaque, mid-animation), then hide it from the main pass.
+function teleCapture(tele) {
+  if (!tele || !modelRoot) {
+    if (teleHidden && modelRoot) { modelRoot.visible = true; teleHidden = false; }
+    return;
+  }
+  ensureTeleFX();
+  modelRoot.visible = true;
+  renderer.setRenderTarget(teleRT);
+  renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.render(scene, sceneCam);
+  renderer.setRenderTarget(null);
+  modelRoot.visible = false; teleHidden = true;
+}
+const teleEase = (t) => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+function teleDraw(tele) {
+  if (!tele || !teleCells) return;
+  const bb = characterScreenBBox();
+  const padX = (bb.x1 - bb.x0) * .1, padY = (bb.y1 - bb.y0) * .08;   // keep hair/edges in frame
+  const x0 = Math.max(0, bb.x0 - padX), y0 = Math.max(0, bb.y0 - padY);
+  const w = Math.max(1e-4, Math.min(1, bb.x1 + padX) - x0), h = Math.max(1e-4, Math.min(1, bb.y1 + padY) - y0);
+  const aspect = lastW / lastH;
+  // effect target = the door's centre (world/NDC coords)
+  const room = resolveRoom(tele.u);
+  const dsp = floorToCanvas(room.floor, room.u, tele.v, room.region);
+  const chH = (sceneModel ? sceneModel.height * sceneBaseScale : .9) * depthScaleAt(room.floor, tele.v) * (room.region?.h ?? 1);
+  const doorW = { x: (dsp.x * 2 - 1) * aspect, y: (1 - dsp.y * 2) + chH * .5 };
+  const D = tele.phase === 'out' ? tele.p : 1 - tele.p;   // 0 = whole character, 1 = fully gone
+  const E = tele.effect;
+  for (const c of teleCells) {
+    const fx0 = x0 + (c.gx / TELE_GX) * w, fy0 = y0 + (c.gy / TELE_GY) * h;
+    const cw = w / TELE_GX, ch = h / TELE_GY;
+    let px = ((fx0 + cw / 2) * 2 - 1) * aspect, py = 1 - (fy0 + ch / 2) * 2;
+    let sx = cw * 2 * aspect, sy = ch * 2, op = 1, rot = 0;
+    if (E === 'fade' || E === 'none') {
+      op = 1 - D; px += (doorW.x - px) * .15 * teleEase(D);
+    } else if (E === 'poof') {
+      // quick fade in/out (not an instant pop) — fully gone by the time the smoke peaks
+      op = 1 - Math.min(1, Math.max(0, (D - .18) / .3));
+    } else if (E === 'beam') {
+      const rowF = 1 - c.gy / TELE_GY;                      // beam takes the top rows first
+      const k = Math.min(1, Math.max(0, (D * 1.5 - rowF * .8) / .5));
+      py += k * .25; px += Math.sin(c.seed * 7 + D * 12) * .015 * k;
+      op = 1 - k; sy *= 1 - k * .4;
+    } else if (E === 'particles') {                          // per-tile scatter into the door
+      const k = teleEase(Math.min(1, Math.max(0, (D * 1.45 - c.seed * .45) / .8)));
+      px += (doorW.x - px) * k + Math.sin(c.seed * 20 + D * 8) * .05 * k;
+      py += (doorW.y - py) * k + Math.cos(c.seed * 15 + D * 9) * .04 * k;
+      const s = 1 - k * .9; sx *= s; sy *= s; op = 1 - k * k;
+    } else if (E === 'vortex') {                             // vortex — spin hard into the door
+      const k = teleEase(Math.min(1, D * 1.15));
+      const spin = 6.5 * k;
+      const ox = px - doorW.x, oy = py - doorW.y;
+      const cs = Math.cos(spin), sn = Math.sin(spin), sc = 1 - k * .92;
+      px = doorW.x + (ox * cs - oy * sn) * sc; py = doorW.y + (ox * sn + oy * cs) * sc;
+      sx *= sc; sy *= sc; rot = spin; op = 1 - Math.max(0, (k - .75) / .25);
+    } else {                                                 // portal — smooth glide + shrink, NO spin
+      const k = teleEase(Math.min(1, D * 1.15));
+      const sc = 1 - k * .92;
+      px = doorW.x + (px - doorW.x) * sc; py = doorW.y + (py - doorW.y) * sc;
+      sx *= sc; sy *= sc; op = 1 - Math.max(0, (k - .75) / .25);
+    }
+    c.mesh.position.set(px, py, .4); c.mesh.scale.set(sx, sy, 1); c.mesh.rotation.z = rot;
+    c.mat.opacity = Math.max(0, Math.min(1, op)); c.mesh.visible = op > 0.01;
+    // each tile samples the exact screen region it covers (RT v-origin is bottom)
+    const uv = c.mesh.geometry.attributes.uv;
+    const u0 = fx0, u1 = fx0 + cw, v0 = 1 - (fy0 + ch), v1 = 1 - fy0;
+    uv.setXY(0, u0, v1); uv.setXY(1, u1, v1); uv.setXY(2, u0, v0); uv.setXY(3, u1, v0);
+    uv.needsUpdate = true;
+  }
+  const clip = sceneClipRect();
+  if (clip) { renderer.setScissorTest(true); renderer.setScissor(clip.x, clip.y, clip.w, clip.h); }
+  renderer.render(teleScene, sceneCam);
+  if (clip) renderer.setScissorTest(false);
+}
+
 function updateSceneCam() {
   const aspect = lastW / lastH;
   sceneCam.left = -aspect; sceneCam.right = aspect; sceneCam.top = 1; sceneCam.bottom = -1;
@@ -1003,7 +1212,8 @@ function placeCharacter(snap) {
   const aspect = lastW / lastH;
   // Scale by depth perspective AND the room's vertical share of the canvas (a shorter
   // monitor gets a proportionally smaller character so it fits its screen).
-  const scl = sceneBaseScale * depthScaleAt(f, snap.v) * reg.h;
+  // sceneCharShrink < 1 while a door effect swallows the character (portal/vortex/particles).
+  const scl = sceneBaseScale * depthScaleAt(f, snap.v) * reg.h * sceneCharShrink;
   const offX = (snap.offset?.x || 0) / (lastW / 2) * aspect;
   const offY = -(snap.offset?.y || 0) / (lastH / 2);
   const worldX = (cx * 2 - 1) * aspect + offX;
@@ -1179,8 +1389,12 @@ function renderScene(dt) {
   mixer.update(dt);
   if (vrm?.update) vrm.update(dt);
   placeCharacter(snap);
-  sceneCharFade = snap.fade ?? 1;        // door-teleport vanish/reappear
-  applyCharacterFade(sceneCharFade);
+  sceneCharFade = snap.fade ?? 1;        // door-teleport vanish/reappear (drives the shadow)
+  // While teleporting, the character is drawn via the SNAPSHOT pipeline (clean image tiles)
+  // instead of material alpha-fading — fading a 3D model makes overlapping parts show
+  // through each other. teleCapture renders the live model to a texture and hides it.
+  if (snap.tele) { applyCharacterFade(1); teleCapture(snap.tele); }
+  else { teleCapture(null); applyCharacterFade(sceneCharFade); }
   updateSceneCam();
   renderer.setRenderTarget(null);
   renderer.clear();
@@ -1208,7 +1422,9 @@ function renderScene(dt) {
   } else {
     renderer.render(scene, sceneCam);    // character (lights + modelRoot)
   }
-  renderSceneGlows();   // additive light halos on top
+  renderSceneGlows();      // additive light halos on top
+  teleDraw(snap.tele);     // the character as clean snapshot-tiles doing the effect
+  renderDoorFX(snap.tele); // door sprites (portal ring, beam, smoke) on top
 }
 
 // Scissor rect (LOGICAL px, WebGL bottom-left origin) for the character's current screen

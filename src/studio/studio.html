@@ -696,6 +696,18 @@
             to place one per screen; Select to move or delete it.</p>
           <div id="scene-door-list" class="chip-list">No door yet.</div>
           <div id="scene-door-edit" class="sub-card" style="display:none">
+            <div class="field">
+              <label>Transition effect (plays when crossing screens)</label>
+              <select id="door-effect" onchange="sceneDoorEffect(this.value)">
+                <option value="portal">🌀 Portal</option>
+                <option value="particles">✨ Particles</option>
+                <option value="fade">🌫️ Light fade</option>
+                <option value="beam">📡 Teleport beam</option>
+                <option value="vortex">🌪️ Vortex</option>
+                <option value="poof">💨 Poof</option>
+                <option value="none">— None (plain fade) —</option>
+              </select>
+            </div>
             <button class="btn btn-secondary btn-sm btn-full" onclick="sceneDoorDelete()">🗑 Delete door</button>
           </div>
         </div>

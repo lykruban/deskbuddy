@@ -35,7 +35,7 @@ function collectZones(scene, multi) {
 // Doors: the first door of each room, in global-u (room i's local u → i + u). Map room→{u,v}.
 function collectDoors(scene, multi) {
   const map = {};
-  const add = (room, i) => { const d = (room.doors || [])[0]; if (d) map[i] = { u: i + d.u, v: d.v }; };
+  const add = (room, i) => { const d = (room.doors || [])[0]; if (d) map[i] = { u: i + d.u, v: d.v, effect: d.effect || 'portal' }; };
   if (multi) (scene.rooms || []).forEach((room, i) => add(room, i));
   else add(scene, 0);
   return map;
@@ -166,7 +166,7 @@ export function createBehavior(scenepack, rng = Math.random) {
         const wps = [];
         // Tag the two door waypoints so update() can teleport between them (vanish at the exit
         // door, reappear at the enter door) instead of walking the character across the seam.
-        const exit = doorOf(ra); if (exit) wps.push({ u: exit.u, v: exit.v, doorExit: true });
+        const exit = doorOf(ra); if (exit) wps.push({ u: exit.u, v: exit.v, doorExit: true, effect: exit.effect });
         const enter = doorOf(rb); if (enter) wps.push({ u: enter.u, v: enter.v, doorEnter: true });
         const legFrom = enter ? { u: enter.u, v: enter.v } : from;
         return [...wps, ...findPath(legFrom, target, zones)];
@@ -289,8 +289,12 @@ export function createBehavior(scenepack, rng = Math.random) {
         if (wp.doorExit && nxt && nxt.doorEnter) {
           // Reached this screen's door with the next waypoint being the OTHER screen's door:
           // teleport across instead of walking the seam. Fade out here, then reappear there.
+          // A door EFFECT stretches each half so the transition has room to play.
           st.phase = 'teleport'; st.teleT = 0; st.teleSnapped = false;
+          st.teleExit = { u: wp.u, v: wp.v };
           st.teleEnter = { u: nxt.u, v: nxt.v };
+          st.teleEffect = wp.effect || 'portal';
+          st.teleHalf = st.teleEffect === 'none' ? TELE_HALF : 0.85;
           st.wp += 2;   // consume both door waypoints; resume at the next real waypoint
         } else {
           st.wp++;
@@ -314,12 +318,13 @@ export function createBehavior(scenepack, rng = Math.random) {
     } else if (st.phase === 'teleport') {
       // Door crossing: fade out at the exit door, snap to the enter door at the midpoint,
       // fade back in there, then resume the walk toward the target.
+      const half = st.teleHalf || TELE_HALF;
       st.teleT += dt;
-      if (st.teleT >= TELE_HALF && !st.teleSnapped) {
+      if (st.teleT >= half && !st.teleSnapped) {
         st.pos = { u: st.teleEnter.u, v: st.teleEnter.v };   // reappear at the other screen's door
         st.teleSnapped = true;
       }
-      if (st.teleT >= TELE_HALF * 2) st.phase = 'walking';   // continue to the target from here
+      if (st.teleT >= half * 2) st.phase = 'walking';   // continue to the target from here
     }
     // Smoothly rotate toward the target heading/facing instead of snapping.
     st.yaw = easeAngle(st.yaw, st.targetYaw, TURN_SPEED * dt);
@@ -327,12 +332,19 @@ export function createBehavior(scenepack, rng = Math.random) {
     const offset = (st.phase === 'idle' && st.current?.offset) || { x: 0, y: 0 };
     // Character opacity: 1 normally; during a door teleport it dips 1→0 (vanish into the door)
     // then climbs 0→1 (reappear at the other door). The renderer fades the model + its shadow.
-    let fade = 1;
+    // `tele` carries the door-effect info so the renderer can draw the transition at the door.
+    let fade = 1, tele = null;
     if (st.phase === 'teleport') {
-      fade = st.teleT < TELE_HALF ? 1 - st.teleT / TELE_HALF : (st.teleT - TELE_HALF) / TELE_HALF;
+      const half = st.teleHalf || TELE_HALF;
+      const out = st.teleT < half;
+      fade = out ? 1 - st.teleT / half : (st.teleT - half) / half;
       fade = Math.max(0, Math.min(1, fade));
+      tele = { effect: st.teleEffect || 'portal', phase: out ? 'out' : 'in',
+               p: Math.max(0, Math.min(1, (out ? st.teleT : st.teleT - half) / half)),
+               u: out ? (st.teleExit?.u ?? c.u) : st.teleEnter.u,
+               v: out ? (st.teleExit?.v ?? c.v) : st.teleEnter.v };
     }
-    return { u: c.u, v: c.v, yaw: st.yaw, moving: st.phase === 'walking', clip: clipFor(), offset, fade };
+    return { u: c.u, v: c.v, yaw: st.yaw, moving: st.phase === 'walking', clip: clipFor(), offset, fade, tele };
   }
 
   // Force-walk to a specific floor point (e.g. user clicked the scene). Optional.
