@@ -765,9 +765,16 @@ function updateNotifBadges() {
     } catch {}
   }
   if (tray) tray.setToolTip(notifUnread > 0 ? `DeskBuddy · ${notifUnread} new message${notifUnread > 1 ? 's' : ''}` : 'DeskBuddy');
-  refreshTray();
-  studioWindow?.webContents.send('notifications-changed');
+  // Only rebuild the tray + notify the studio when the unread count actually CHANGED.
+  // Unconditional refresh caused an infinite loop (badge → studio 'notifications-changed' →
+  // studio re-syncs → badge → …) that also dismissed the tray menu the moment it opened.
+  if (notifUnread !== _lastNotifUnread) {
+    _lastNotifUnread = notifUnread;
+    refreshTray();
+    studioWindow?.webContents.send('notifications-changed');
+  }
 }
+let _lastNotifUnread = -1;
 ipcMain.handle('notif-sync',   () => syncNotifications());
 ipcMain.handle('notif-unread', () => notifUnread);
 ipcMain.handle('notif-mark-read', async (_, ids) => {

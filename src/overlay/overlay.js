@@ -1241,6 +1241,10 @@ function placeCharacter(snap) {
     // the whole body sky-high.
     const s = sampleRoot(rmS, sceneCurrentAction.time);
     modelRoot.position.y += s.dy * (sceneModel.height * scl) * ROOT_VFAC;
+    // Cancel the clip's HORIZONTAL displacement visually — otherwise the hips animation
+    // slides the model away from its root and snaps back on every loop ("drift"). Travel
+    // ("Move on") clips move for real via commitSceneTravel; in-place clips stay planted.
+    modelRoot.position.x -= (s.dx * Math.cos(snap.yaw) + s.dz * Math.sin(snap.yaw)) * (sceneModel.height * scl) * ROOT_VFAC;
     if (groundBones.length) {
       modelRoot.updateMatrixWorld(true);
       const lo = lowestFootY();
@@ -1963,7 +1967,11 @@ function animate(ts) {
 
   const dt = Math.min(clock.getDelta(), 0.1);
 
-  if (activeScene && modelRoot && mixer) { renderScene(dt); return; }   // scene mode owns the frame
+  if (activeScene && modelRoot && mixer) {   // scene mode owns the frame
+    // Armored: a one-frame error must never kill the render loop (rAF chain survives above).
+    try { renderScene(dt); } catch (e) { console.error('renderScene:', e && e.message); }
+    return;
+  }
 
   if (mixer) mixer.update(dt);              // 1. mixer sets normalized bone rotations
   if (vrm?.update) vrm.update(dt);         // 2. VRM converts normalized → raw bone space
@@ -2047,4 +2055,11 @@ requestAnimationFrame(animate);
   if (modelRoot && s.activeScene) loadScene(s.activeScene);
   if (!modelRoot) emptyEl.style.display = 'flex';
 })();
-window.deskbuddy.onCharacterChanged(loadCharacter);
+// Save & Activate from the Studio swaps the model — if a scene is running, the scene's
+// state (base scale, grounding, behavior) was derived from the OLD model, so reload the
+// scene around the new character instead of letting it crash.
+window.deskbuddy.onCharacterChanged(async (p) => {
+  const scenePathNow = activeScene ? scenePath : null;
+  await loadCharacter(p);
+  if (scenePathNow) { try { await loadScene(scenePathNow); } catch (e) { console.error('scene reload after activate:', e); } }
+});

@@ -153,6 +153,25 @@ function startServer(dataDir) {
     } catch { res.json([]); }
   });
 
+  // Website feedback — bug reports + FAQ questions from deskbuddy.yuvexel.com. Appended to
+  // dataDir/feedback.json for the developer to review (answer frequent ones in the site's
+  // FAQ/blog). Public; light validation; the auth rate-limiter doesn't apply here so add a
+  // simple size cap instead.
+  app.post('/api/feedback', (req, res) => {
+    const kind = ['bug', 'question', 'other'].includes((req.body || {}).kind) ? req.body.kind : 'other';
+    const message = String((req.body || {}).message || '').trim().slice(0, 4000);
+    const email = String((req.body || {}).email || '').trim().slice(0, 200);
+    if (message.length < 5) return res.status(400).json({ error: 'Tell us a little more than that 🙂' });
+    try {
+      const f = path.join(dataDir, 'feedback.json');
+      let list = []; try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
+      if (!Array.isArray(list)) list = [];
+      list.push({ kind, message, email, at: Date.now(), ua: String(req.headers['user-agent'] || '').slice(0, 200) });
+      fs.writeFileSync(f, JSON.stringify(list, null, 2));
+      res.json({ ok: true });
+    } catch { res.status(500).json({ error: 'Could not save' }); }
+  });
+
   // Website waitlist — collect emails for the marketplace/Pro launch. Appends to
   // dataDir/waitlist.json (deduped). Public; no auth. CORS is already open.
   app.post('/api/waitlist', (req, res) => {
