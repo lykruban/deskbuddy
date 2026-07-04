@@ -1007,10 +1007,28 @@ function sendPropHitboxes() {
   const boxes = propClicks
     ? fgSprites.filter(s => s.clickable && s.rect).map(s => ({ x0: s.rect.x0, x1: s.rect.x1, y0: s.rect.y0, y1: s.rect.y1, mask: spriteMask(s) }))
     : [];
+  // The character itself is always grabbable: include its (padded, coarsely-rounded) box so
+  // the main-process poll captures clicks over it. Rounding keeps the JSON stable enough to
+  // avoid re-sending every frame while it idles.
+  const cb = charGrabBox();
+  if (cb) boxes.push({ x0: Math.round(cb.x0 * 200) / 200, x1: Math.round(cb.x1 * 200) / 200,
+                       y0: Math.round(cb.y0 * 200) / 200, y1: Math.round(cb.y1 * 200) / 200, mask: null });
   const json = JSON.stringify(boxes);
   if (json === _lastHitboxJSON) return;   // only send when they actually change
   _lastHitboxJSON = json;
   window.deskbuddy.setPropHitboxes(boxes);
+}
+// The character's on-screen box (canvas fractions), padded for easy grabbing.
+function charGrabBox() {
+  if (!modelRoot || !behavior) return null;
+  const bb = characterScreenBBox();
+  if (!(bb.x1 > bb.x0)) return null;
+  const px = (bb.x1 - bb.x0) * .12, py = (bb.y1 - bb.y0) * .06;
+  return { x0: Math.max(0, bb.x0 - px), x1: Math.min(1, bb.x1 + px), y0: Math.max(0, bb.y0 - py), y1: Math.min(1, bb.y1 + py) };
+}
+function charHitAt(fx, fy) {
+  const b = charGrabBox();
+  return !!b && fx >= b.x0 && fx <= b.x1 && fy >= b.y0 && fy <= b.y1;
 }
 
 // A prop's PNG is usually mostly transparent (a small figure on a big canvas), so its
@@ -1425,7 +1443,9 @@ function renderScene(dt) {
   renderSceneGlows();      // additive light halos on top
   teleDraw(snap.tele);     // the character as clean snapshot-tiles doing the effect
   renderDoorFX(snap.tele); // door sprites (portal ring, beam, smoke) on top
+  if ((_hbTick = (_hbTick + 1) % 10) === 0) sendPropHitboxes();   // keep the grab box tracking the character
 }
+let _hbTick = 0;
 
 // Scissor rect (LOGICAL px, WebGL bottom-left origin) for the character's current screen
 // region, or null for single-display. Keeps a room's content from bleeding into the next.
@@ -1797,8 +1817,55 @@ function openMenu() {
 document.getElementById('menu-btn').addEventListener('click', openMenu);
 // In scene/wallpaper mode the overlay is click-through and the menu lives in the
 // tray, so clicking the character does nothing here (gated on !wallpaperMode).
+// ── Scene grab-and-drag ─────────────────────────────────────────────────────────
+// Press on the character in scene mode and drag it anywhere — across BOTH screens (doors
+// don't apply to a hand of god). The cursor point converts through EACH room's floor
+// homography (screenToFloor), so the character tracks the floor perspective of whichever
+// screen it's over: drag deeper → it walks back and shrinks, correctly, per room.
+let sceneDragging = false, _sceneDragMoved = false;
+function canvasPointToFloor(fx, fy) {
+  let ri = 0, reg = sceneRoomRegions[0];
+  for (let i = 0; i < sceneRoomRegions.length; i++) {
+    const r = sceneRoomRegions[i];
+    if (fx >= r.x && fx <= r.x + r.w && fy >= r.y && fy <= r.y + r.h) { ri = i; reg = r; break; }
+  }
+  const room = (sceneDisplays > 1 && activeScene.rooms) ? (activeScene.rooms[ri] || activeScene.rooms[0]) : { floor: activeScene.floor };
+  const p = screenToFloor(room.floor, (fx - reg.x) / reg.w, (fy - reg.y) / reg.h);
+  return { gu: (sceneDisplays > 1 ? ri : 0) + p.u, v: p.v };
+}
+canvas.addEventListener('mousedown', (e) => {
+  if (!wallpaperMode || e.button !== 0 || !behavior || !activeScene) return;
+  const r = canvas.getBoundingClientRect();
+  const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+  if (!charHitAt(fx, fy)) return;
+  sceneDragging = true; _sceneDragMoved = false;
+  behavior.setHeld(true);                        // suspend the brain; plays the Grabbed state
+  window.deskbuddy.setSceneInteractive(true);    // keep receiving events for the whole drag
+  canvas.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', (e) => {
+  if (!sceneDragging || !behavior) return;
+  _sceneDragMoved = true;
+  const r = canvas.getBoundingClientRect();
+  const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  const fy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  const p = canvasPointToFloor(fx, fy);
+  behavior.holdMoveTo(p.gu, p.v);
+});
+const endSceneDrag = () => {
+  if (!sceneDragging) return;
+  sceneDragging = false;
+  behavior?.setHeld(false);                      // resume idling right where it was dropped
+  rollIdle();                                    // fresh idle pose on release
+  window.deskbuddy.setSceneInteractive(propClicks);
+  canvas.style.cursor = 'default';
+};
+window.addEventListener('mouseup', endSceneDrag);
+window.addEventListener('blur', endSceneDrag);
+
 canvas.addEventListener('click',       (e) => {
   if (wallpaperMode) {   // in a scene: clicking a prop sends the character to play its animation
+    if (_sceneDragMoved) { _sceneDragMoved = false; return; }   // that was a drag, not a click
     const r = canvas.getBoundingClientRect();
     const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
     if (e.button === 0) {
@@ -1869,8 +1936,10 @@ canvas.addEventListener('mousemove', (e) => {
   if (!wallpaperMode) return;
   const r = canvas.getBoundingClientRect();
   const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
-  const over = !!propHitAt(fx, fy);   // only a real, visible prop pixel counts (not its transparent margins)
-  canvas.style.cursor = over ? 'pointer' : 'default';
+  const overProp = !!propHitAt(fx, fy);   // only a real, visible prop pixel counts (not its transparent margins)
+  const overChar = charHitAt(fx, fy);     // the character is always grabbable
+  const over = overProp || overChar;
+  canvas.style.cursor = sceneDragging ? 'grabbing' : overChar ? 'grab' : overProp ? 'pointer' : 'default';
   if (NATIVE_FORWARD && _propCapturing !== over) {
     _propCapturing = over;
     window.deskbuddy.setPropCapture(over);

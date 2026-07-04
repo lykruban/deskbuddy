@@ -240,8 +240,23 @@ export function createBehavior(scenepack, rng = Math.random) {
   }
 
   function clipFor() {
+    if (st.phase === 'held') return 'grabbed';   // dragging → the Grabbed state (falls back to idle)
     if (st.phase === 'walking') return 'walk';
     return st.current?.animation || null;   // null → renderer falls back to idle
+  }
+
+  // ── Grab-and-drag (scene mode) ──────────────────────────────────────────────────
+  // While held, the brain is fully suspended — no wandering, no pathing, no doors; the
+  // renderer drives the position straight from the cursor via holdMoveTo (clamped to the
+  // rooms strip, so dragging ACROSS screens just works). Release resumes idling in place.
+  function setHeld(on) {
+    if (on) { st.phase = 'held'; st.target = null; st.path = null; st.forced = false; }
+    else if (st.phase === 'held') { st.phase = 'idle'; st.timer = 0; st.dwell = dwellFor(st.current); }
+  }
+  function holdMoveTo(gu, gv) {
+    if (st.phase !== 'held') return;
+    const c = clamp(gu, gv);
+    st.pos.u = c.u; st.pos.v = c.v;
   }
 
   // The most-overdue scheduled anchor whose timer has elapsed (or null).
@@ -375,5 +390,5 @@ export function createBehavior(scenepack, rng = Math.random) {
   // Force roaming on/off from outside (tray toggle); pass null to follow the scenepack again.
   function setWander(v) { wanderOverride = (v == null) ? null : !!v; }
 
-  return { update, goTo, goToAnchor, translate, setWander, state: st };
+  return { update, goTo, goToAnchor, translate, setWander, setHeld, holdMoveTo, state: st };
 }
