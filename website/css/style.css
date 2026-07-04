@@ -166,3 +166,78 @@ h2{font-family:var(--font-d);font-size:clamp(28px,4vw,42px);letter-spacing:-1.2p
   html{scroll-behavior:auto}
   .reveal{opacity:1;transform:none}
 }
+
+/* ── video hero (home) ─────────────────────────────────────────────────────── */
+.hero.has-video{overflow:hidden}
+.hero-bg{position:absolute;inset:0;z-index:0}
+.hero-bg video{width:100%;height:100%;object-fit:cover;opacity:.34;filter:saturate(1.05)}
+.hero-bg::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,#0a0b0ecc 0%,#0a0b0e88 40%,var(--bg) 96%)}
+.hero.has-video .wrap{position:relative;z-index:1}
+.hero-credit{position:absolute;right:16px;bottom:12px;z-index:1;font-size:11px;color:#ffffff55}
+
+/* ── sub-page header ───────────────────────────────────────────────────────── */
+.page-hero{padding:72px 0 48px;border-bottom:1px solid var(--line)}
+.page-hero h1{font-size:clamp(32px,4.6vw,52px);margin-top:10px}
+.page-hero .lead{margin-top:12px}
+.nav-links a.active{color:var(--text)}
+
+/* ── docs (directory sidebar + content) ────────────────────────────────────── */
+.docs{display:grid;grid-template-columns:250px 1fr;gap:56px;padding:56px 0 120px}
+@media(max-width:860px){.docs{grid-template-columns:1fr;gap:24px}}
+.docs-side{position:sticky;top:88px;align-self:start;max-height:calc(100vh - 110px);overflow-y:auto;
+  border-right:1px solid var(--line);padding-right:20px}
+@media(max-width:860px){.docs-side{position:static;border-right:none;border-bottom:1px solid var(--line);padding:0 0 16px;max-height:none}}
+.docs-side h4{font-family:var(--font-d);font-size:11px;letter-spacing:2px;text-transform:uppercase;
+  color:var(--faint);margin:18px 0 8px}
+.docs-side a{display:block;padding:5px 0 5px 10px;font-size:13.5px;color:var(--muted);
+  border-left:2px solid transparent;transition:color .15s,border-color .15s}
+.docs-side a:hover{color:var(--text)}
+.docs-side a.on{color:var(--text);border-left-color:var(--violet)}
+.docs-body{min-width:0;max-width:720px}
+.docs-body section{padding:8px 0 44px;border-bottom:1px solid var(--line);margin-bottom:36px}
+.docs-body h2{font-size:26px;scroll-margin-top:90px}
+.docs-body h3{font-family:var(--font-d);font-size:17px;font-weight:600;margin:26px 0 8px;scroll-margin-top:90px}
+.docs-body p,.docs-body li{color:var(--muted);font-size:14.5px}
+.docs-body ul,.docs-body ol{padding-left:22px;margin:10px 0}
+.docs-body li{margin:6px 0}
+.docs-body b,.docs-body strong{color:var(--text)}
+.docs-body img{border:1px solid var(--line);border-radius:10px;margin:14px 0;max-width:100%}
+.docs-body code,kbd{background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:1px 7px;font-size:12.5px;color:var(--text)}
+.note{border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:10px;
+  background:var(--surface);padding:12px 16px;font-size:13.5px;color:var(--muted);margin:14px 0}
+
+/* ── forms (report / ask) ──────────────────────────────────────────────────── */
+.form-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:28px;max-width:560px}
+.form-card label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 6px}
+.form-card input,.form-card textarea,.form-card select{width:100%;padding:12px 14px;border-radius:10px;
+  border:1px solid var(--line2);background:var(--bg);color:var(--text);font-size:14px;font-family:inherit}
+.form-card textarea{min-height:110px;resize:vertical}
+.form-card input:focus,.form-card textarea:focus,.form-card select:focus{outline:none;border-color:var(--violet)}
+.form-card .btn{margin-top:18px}
+.form-msg{margin-top:12px;font-size:13px;font-weight:500;min-height:18px}
+.form-msg.ok{color:var(--cyan)}.form-msg.err{color:#ff7070}
+
+/* ── FAQ accordion ─────────────────────────────────────────────────────────── */
+.faq-list{max-width:720px}
+.faq-list details{border:1px solid var(--line);border-radius:12px;background:var(--surface);
+  padding:0 20px;margin-bottom:10px}
+.faq-list summary{cursor:pointer;list-style:none;padding:16px 0;font-family:var(--font-d);
+  font-weight:600;font-size:15px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.faq-list summary::-webkit-details-marker{display:none}
+.faq-list summary::after{content:"+";color:var(--faint);font-size:20px;flex-shrink:0}
+.faq-list details[open] summary::after{content:"–"}
+.faq-list .faq-a{padding:0 0 18px;color:var(--muted);font-size:14px}
+.faq-list .faq-a a{color:var(--cyan)}
+
+/* ── blog ──────────────────────────────────────────────────────────────────── */
+.blog-list{max-width:720px}
+.post{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:30px;margin-bottom:18px}
+.post .date{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--faint)}
+.post h2{font-size:24px;margin:8px 0 14px}
+.post .body{color:var(--muted);font-size:14.5px}
+
+/* docs screenshot pairs */
+.shot-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:700px){.shot-row{grid-template-columns:1fr}}

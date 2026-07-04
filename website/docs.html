@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeskBuddy — Documentation</title>
+<meta name="description" content="How to use DeskBuddy — every tab and feature explained.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%90%BE%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="config.js"></script>
+</head>
+<body>
+<header class="nav" id="top">
+  <div class="wrap nav-in">
+    <a class="logo" href="index.html">🐾 DeskBuddy</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="index.html">Home</a><a class="active" href="docs.html">Docs</a><a href="support.html">FAQ &amp; Support</a><a href="blog.html">Blog</a><a href="about.html">About</a>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="download.html">Download</a>
+  </div>
+</header>
+
+<main>
+<section class="page-hero">
+  <div class="wrap">
+    <span class="kicker">How to use · every feature</span>
+    <h1><em>Documentation</em></h1>
+    <p class="lead">Everything DeskBuddy does, tab by tab. Use the directory on the left to jump around.</p>
+  </div>
+</section>
+
+<div class="wrap docs">
+  <!-- ══ directory ══ -->
+  <nav class="docs-side" id="docs-side" aria-label="Documentation sections">
+    <h4>Start here</h4>
+    <a href="#install">Install &amp; first launch</a>
+    <a href="#tray">The tray menu</a>
+    <a href="#buddy">Buddy mode</a>
+    <h4>Character Studio</h4>
+    <a href="#studio">Overview &amp; sign-in</a>
+    <a href="#tab-character">Character tab</a>
+    <a href="#tab-animations">Animations tab</a>
+    <a href="#tab-states">States tab</a>
+    <a href="#tab-scene">Scene tab (editor)</a>
+    <h4>Scenes</h4>
+    <a href="#scenes">Living-wallpaper scenes</a>
+    <a href="#doors">Doors &amp; transition effects</a>
+    <h4>Your account</h4>
+    <a href="#account">Sign-in &amp; recovery code</a>
+    <a href="#library">Export / import your library</a>
+    <a href="#messages">Messages inbox</a>
+    <h4>Help</h4>
+    <a href="#troubleshoot">Troubleshooting</a>
+  </nav>
+
+  <!-- ══ content ══ -->
+  <div class="docs-body">
+    <section id="install">
+      <h2>Install &amp; first launch</h2>
+      <ol>
+        <li><a href="download.html">Download</a> the installer and run it. If Windows warns about an
+          "unknown publisher", click <b>More info → Run anyway</b>. If it says SmartScreen is
+          unreachable: right-click the file → <b>Properties</b> → tick <b>Unblock</b> → Apply.</li>
+        <li>DeskBuddy starts in <b>buddy mode</b> — a character appears on your desktop and a
+          <b>🐾 paw icon</b> appears in the system tray (bottom-right, near the clock).</li>
+        <li>That tray icon is mission control — everything starts there.</li>
+      </ol>
+    </section>
+
+    <section id="tray">
+      <h2>The tray menu</h2>
+      <p>Right-click the 🐾 tray icon:</p>
+      <ul>
+        <li><b>📬 Messages</b> — your update inbox (see <a href="#messages">Messages</a>).</li>
+        <li><b>Show / Hide Buddy</b> — toggle the character.</li>
+        <li><b>Scene ▸</b> — activate any saved scene, or exit back to buddy mode.</li>
+        <li><b>Click to Move</b> — when ON, clicking the scene floor sends the character there.</li>
+        <li><b>Random Walking</b> — when OFF, the character stays put in scenes (it keeps idling;
+          Click to Move still works if you enable it).</li>
+        <li><b>Quality / Frame rate / Light &amp; Shadow / Cast Shadow</b> — performance and looks.
+          Low + 30 FPS is nearly free on any modern PC.</li>
+        <li><b>Character Studio</b> — the creation app (below).</li>
+      </ul>
+    </section>
+
+    <section id="buddy">
+      <h2>Buddy mode</h2>
+      <p>The character lives on top of your windows and switches animation automatically:
+        <b>Active</b> while you're working, <b>Idle</b> when you pause, <b>Watching</b> when you hover
+        it, <b>Sleeping</b> after long idle (threshold configurable in the Studio).</p>
+      <ul>
+        <li><b>Drag it</b> — press and drag to move it anywhere. If a <b>Grabbed</b> animation is
+          assigned, it plays while held.</li>
+        <li><b>Click it</b> — opens its menu (move, sit, states, studio, settings).</li>
+        <li><b>Double-click</b> — plays the <b>Clicked</b> reaction, if assigned.</li>
+      </ul>
+    </section>
+
+    <section id="studio">
+      <h2>Character Studio — overview</h2>
+      <img src="media/studio-home.png" alt="Character Studio home" loading="lazy">
+      <p>Open it from the tray. You'll be asked to <b>sign in</b> (free account — it links your library
+        and, later, the marketplace). The left sidebar lists your characters; the top bar has
+        <b>Import Model</b>, <b>Export / Import Library</b>, the <b>🔔 inbox</b>, and
+        <b>Save &amp; Activate</b> — which saves your work and makes that character the live buddy.</p>
+      <p>The right panel has four tabs: <b>Character · Animations · States · Scene</b>.</p>
+    </section>
+
+    <section id="tab-character">
+      <h2>Character tab</h2>
+      <p>Import and fit your model.</p>
+      <ul>
+        <li><b>Formats:</b> GLB, GLTF, VRM, FBX, OBJ (+MTL), DAE, STL, PLY, 3MF.</li>
+        <li><b>Size</b> — the − / + buttons scale the character.</li>
+        <li><b>Position</b> — nudge left/right/up/down/forward/back; <b>⌖ Re-center</b> resets.</li>
+        <li><b>Rotation</b> — turn/tilt/roll to face the camera; <b>⟲ Reset Rotation</b> resets.</li>
+      </ul>
+      <div class="note">VRM models (VRoid, VTuber avatars) come pre-rigged with hair/cloth spring
+        bones — they just work. Mixamo-rigged FBX models animate perfectly with Mixamo clips.</div>
+    </section>
+
+    <section id="tab-animations">
+      <h2>Animations tab</h2>
+      <img src="media/tab-animations.png" alt="Animations tab" loading="lazy">
+      <p>Give the character motion.</p>
+      <ul>
+        <li><b>Import FBX Animation</b> — add clips (the ▶ next to each previews it).</li>
+        <li><b>Get animations from Mixamo</b> — free library; download as <i>FBX, without skin</i>,
+          then import here. Clips are retargeted onto your character automatically.</li>
+        <li><b>Animation Library</b> — imported clips are saved globally, so every character can
+          reuse them.</li>
+        <li><b>In place vs Move on</b> — for clips that travel (walks, jumps forward): <b>In place</b>
+          plants the character; <b>Move on</b> commits the clip's movement, so the character actually
+          travels across the scene and continues from where it lands.</li>
+        <li><b>Speed / offset adjustments</b> — fine-tune any clip's playback.</li>
+      </ul>
+    </section>
+
+    <section id="tab-states">
+      <h2>States tab</h2>
+      <img src="media/tab-states.png" alt="States tab" loading="lazy">
+      <p>Map animations to situations. Anything unassigned falls back to Idle — the character never freezes.</p>
+      <ul>
+        <li><b>Idle Pose</b> — the default stance. Click <b>＋</b> to add <i>Idle 2, Idle 3…</i> — the
+          character picks one at random each time it idles, so it never looks robotic.</li>
+        <li><b>Idle Break</b> — an occasional stretch/look-around played between idles.</li>
+        <li><b>Active / Walking / Watching / Loading / Sitting / Sleeping</b> — automatic situations.</li>
+        <li><b>Clicked</b> — plays once when double-clicked.</li>
+        <li><b>Grabbed</b> — plays while you drag the buddy.</li>
+        <li><b>Custom states</b> — your own state tied to an app: e.g. play a headbang clip whenever
+          <code>spotify</code> is running. Leave the app blank to trigger it by hand from the buddy's menu.</li>
+        <li><b>Sleep after N min</b> — how long before the buddy dozes off.</li>
+      </ul>
+    </section>
+
+    <section id="tab-scene">
+      <h2>Scene tab — the Scene Editor</h2>
+      <div class="shot-row">
+        <img src="media/tab-scene-top.png" alt="Scene tab (top)" loading="lazy">
+        <img src="media/tab-scene-mid.png" alt="Scene tab (middle)" loading="lazy">
+      </div>
+      <p>Build the world your buddy lives in. A scene is one <b>room per monitor</b>.</p>
+      <ul>
+        <li><b>Displays</b> — how many monitors the scene spans (each becomes a room).</li>
+        <li><b>Background</b> — the room's wallpaper image.</li>
+        <li><b>Floor</b> — drag the four corners of the floor quad to match your image's perspective.
+          This is what makes the character walk "into" the picture and shrink with distance.</li>
+        <li><b>Anchors</b> — spots the character visits while wandering: position, facing, an
+          animation to play, dwell time, weight (how often), and optional
+          <i>repeat every N minutes</i> for scheduled visits.</li>
+        <li><b>Props</b> — foreground images placed in the room; optionally <i>clickable</i>, walking
+          the character over to play an animation.</li>
+        <li><b>Walls</b> — vertical surfaces the character walks around and casts shadows onto.</li>
+        <li><b>No-walk zones</b> — polygons the character must path around.</li>
+        <li><b>Doors</b> — where the character crosses between rooms/screens (see below).</li>
+        <li><b>Lights &amp; shadows</b> — place lights (color, intensity, height); the character is lit
+          by them and casts a matching shadow. Per-scene shadow settings included.</li>
+        <li><b>Wander</b> — walk speed and idle timing for this scene.</li>
+      </ul>
+      <img src="media/tab-scene-bottom.png" alt="Scene tab (bottom)" loading="lazy">
+      <p><b>Tips:</b> middle-mouse pans the editor canvas, <kbd>X</kbd> deletes the selected item,
+        the room switcher swaps monitors, and <b>⛶ Fullscreen</b> gives you the whole screen to edit.
+        <b>Save Scene</b> stores it; activate it from the tray's <b>Scene</b> menu.</p>
+    </section>
+
+    <section id="scenes">
+      <h2>Living-wallpaper scenes</h2>
+      <p>Activate a scene from the tray → <b>Scene</b>. Your wallpaper becomes the scene and the
+        character lives inside it — wandering between anchors, avoiding walls, visiting props.</p>
+      <ul>
+        <li><b>Click to Move</b> (tray) — click anywhere on the floor to send the character there.</li>
+        <li><b>Random Walking</b> (tray) — turn OFF to park the character (it keeps idling and
+          still responds to clicks).</li>
+        <li><b>Clickable props</b> — enable in the buddy menu to click scene props directly.</li>
+        <li><b>Exit Scene</b> — tray → Scene → Exit; your original wallpaper is restored.</li>
+      </ul>
+    </section>
+
+    <section id="doors">
+      <h2>Doors &amp; transition effects</h2>
+      <p>On multi-monitor scenes, place a <b>door</b> in each room — that's where the character
+        crosses between screens. Select a door in the Scene Editor to choose its
+        <b>transition effect</b>:</p>
+      <ul>
+        <li>🌀 <b>Portal</b> — a glowing ring opens; the character glides in and re-emerges.</li>
+        <li>✨ <b>Particles</b> — dissolves into pieces that stream through the door.</li>
+        <li>📡 <b>Teleport beam</b> — scanned away line by line, sci-fi style.</li>
+        <li>🌪️ <b>Vortex</b> — spins into the door.</li>
+        <li>🌫️ <b>Light fade</b> — a clean, subtle crossfade.</li>
+        <li>💨 <b>Poof</b> — gone in a puff of smoke.</li>
+      </ul>
+      <p>Each door can have a different effect. Watch them on the <a href="index.html#showcase"
+        style="color:var(--cyan)">home page gallery</a>.</p>
+    </section>
+
+    <section id="account">
+      <h2>Sign-in &amp; recovery code</h2>
+      <p>The Studio asks you to create a free account (username + password; email optional).
+        On sign-up you get a <b>one-time recovery code</b> — save it somewhere safe: it's the
+        offline way back into your account if you forget your password. Password reset lives at
+        <b>Forgot password?</b> on the sign-in screen.</p>
+      <div class="note">Your recovery code is shown exactly once. Lose it and forget your password
+        with no email set… and we won't be able to help. Write it down. 🙏</div>
+    </section>
+
+    <section id="library">
+      <h2>Export / import your library</h2>
+      <p>Top bar of the Studio:</p>
+      <ul>
+        <li><b>⬆ Export Library</b> — copies all your characters, animations and scenes into a
+          portable <code>DeskBuddyLibrary</code> folder anywhere you choose.</li>
+        <li><b>⬇ Import Library</b> — load such a folder on another PC (choose <b>Merge</b> to add,
+          or <b>Replace</b> to mirror). Your whole setup travels with you.</li>
+      </ul>
+    </section>
+
+    <section id="messages">
+      <h2>Messages inbox</h2>
+      <p>The <b>🔔 bell</b> in the Studio (and 📬 Messages in the tray) is your permanent inbox:
+        a welcome note, app updates, and announcements land there. Nothing is ever deleted.</p>
+    </section>
+
+    <section id="troubleshoot" style="border-bottom:none">
+      <h2>Troubleshooting</h2>
+      <ul>
+        <li><b>Windows blocks the installer</b> — <i>More info → Run anyway</i>, or right-click →
+          Properties → <b>Unblock</b>. The app isn't code-signed yet; it's safe.</li>
+        <li><b>No character on screen</b> — tray → <b>Show Buddy</b>. Still nothing? Open the Studio
+          and <b>Save &amp; Activate</b> a character.</li>
+        <li><b>Performance</b> — tray → Quality <b>Low</b> + 30 FPS.</li>
+        <li><b>A scene looks wrong after editing</b> — re-select it from the tray's Scene menu to
+          reload it.</li>
+        <li><b>Anything else</b> — <a href="support.html" style="color:var(--cyan)">report it</a>
+          with what you did and what happened. We read everything.</li>
+      </ul>
+    </section>
+  </div>
+</div>
+</main>
+
+<footer class="footer">
+  <div class="wrap foot-in">
+    <a class="logo" href="index.html">🐾 DeskBuddy</a>
+    <nav class="foot-links"><a href="download.html">Download</a><a href="docs.html">Docs</a><a href="support.html">FAQ &amp; Support</a><a href="blog.html">Blog</a><a href="about.html">About</a></nav>
+    <p>© 2026 DeskBuddy — a <span class="yuvexel">Yuvexel</span> project</p>
+  </div>
+</footer>
+<script src="js/main.js" defer></script>
+</body>
+</html>

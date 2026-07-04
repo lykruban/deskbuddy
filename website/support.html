@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeskBuddy — FAQ &amp; Support</title>
+<meta name="description" content="DeskBuddy FAQ, ask a question, or report an issue.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%90%BE%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="config.js"></script>
+</head>
+<body>
+<header class="nav" id="top">
+  <div class="wrap nav-in">
+    <a class="logo" href="index.html">🐾 DeskBuddy</a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="index.html">Home</a><a href="docs.html">Docs</a><a class="active" href="support.html">FAQ &amp; Support</a><a href="blog.html">Blog</a><a href="about.html">About</a>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="download.html">Download</a>
+  </div>
+</header>
+
+<main>
+<section class="page-hero">
+  <div class="wrap">
+    <span class="kicker">We actually read these</span>
+    <h1>FAQ &amp; <em>Support</em></h1>
+    <p class="lead">Answers to the common stuff — and two ways to reach us if yours isn't here.
+      Frequent questions get promoted into this FAQ and the <a href="blog.html" style="color:var(--cyan)">blog</a>.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <span class="sec-num">FAQ</span>
+    <h2 style="margin-bottom:28px">Frequently asked</h2>
+    <div class="faq-list" id="faq-list"><!-- built from CONFIG.FAQ --></div>
+  </div>
+</section>
+
+<section class="section" style="border-bottom:none">
+  <div class="wrap">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px" class="support-grid">
+      <div>
+        <span class="sec-num">ASK</span>
+        <h2 style="font-size:24px;margin-bottom:18px">Ask a question</h2>
+        <form class="form-card" data-feedback="question">
+          <label>Your question</label>
+          <textarea name="message" required placeholder="How do I…?"></textarea>
+          <label>Email (optional — if you'd like a reply)</label>
+          <input type="email" name="email" placeholder="you@email.com">
+          <button class="btn btn-primary" type="submit">Send question</button>
+          <p class="form-msg"></p>
+        </form>
+      </div>
+      <div>
+        <span class="sec-num">BUG</span>
+        <h2 style="font-size:24px;margin-bottom:18px">Report an issue</h2>
+        <form class="form-card" data-feedback="bug">
+          <label>What happened? (what you did, what you expected, what you got)</label>
+          <textarea name="message" required placeholder="When I click … the app …"></textarea>
+          <label>Email (optional — for follow-up)</label>
+          <input type="email" name="email" placeholder="you@email.com">
+          <button class="btn btn-primary" type="submit">Send report</button>
+          <p class="form-msg"></p>
+        </form>
+      </div>
+    </div>
+    <style>@media(max-width:820px){.support-grid{grid-template-columns:1fr !important}}</style>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <div class="wrap foot-in">
+    <a class="logo" href="index.html">🐾 DeskBuddy</a>
+    <nav class="foot-links"><a href="download.html">Download</a><a href="docs.html">Docs</a><a href="support.html">FAQ &amp; Support</a><a href="blog.html">Blog</a><a href="about.html">About</a></nav>
+    <p>© 2026 DeskBuddy — a <span class="yuvexel">Yuvexel</span> project</p>
+  </div>
+</footer>
+<script src="js/main.js" defer></script>
+</body>
+</html>
