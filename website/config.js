@@ -41,6 +41,15 @@ window.DB_CONFIG = {
 
   // Blog — newest first. Ask Claude to append entries (bug write-ups, tips, announcements).
   BLOG: [
+    { id: 'update-root-motion', date: '2026-07-04', title: 'Update: Mixamo-accurate animation travel 🦶',
+      body: `Fresh build is up. The headline: <b>"Move on" animations in scenes now play their root
+motion exactly as authored</b> — the planted foot stays nailed to the floor while the body moves,
+just like the Mixamo preview, and the character genuinely ends up where the animation took it.
+"In place" clips are now hips-pinned the same way Mixamo does it: cleanly centred, no
+slide-and-snap.<br><br>Also in this build: the tray menu no longer dismisses itself, Save &amp;
+Activate mid-scene reloads the scene instead of crashing it, and the app self-heals if a window's
+renderer dies. Grab the latest from the <a href="download.html">download page</a> — and the new
+<a href="support.html">support page</a> means your bug reports now land directly on our desk.` },
     { id: 'hello-world', date: '2026-07-04', title: 'DeskBuddy is live 🐾',
       body: `Your desktop is lovely — it's also doing nothing. So we built DeskBuddy: a companion that
 lives on your screen and in little worlds you build, across every monitor you own.

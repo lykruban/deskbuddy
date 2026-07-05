@@ -130,9 +130,11 @@
           then import here. Clips are retargeted onto your character automatically.</li>
         <li><b>Animation Library</b> — imported clips are saved globally, so every character can
           reuse them.</li>
-        <li><b>In place vs Move on</b> — for clips that travel (walks, jumps forward): <b>In place</b>
-          plants the character; <b>Move on</b> commits the clip's movement, so the character actually
-          travels across the scene and continues from where it lands.</li>
+        <li><b>In place vs Move on</b> — for clips whose motion travels (walks, dances that roam):
+          <b>Move on</b> plays the root motion exactly as authored — feet plant on the floor like the
+          Mixamo preview, and the character continues from wherever the animation carried it.
+          <b>In place</b> pins the hips (the same thing Mixamo's "In Place" checkbox does), keeping
+          the animation cleanly centred on the body.</li>
         <li><b>Speed / offset adjustments</b> — fine-tune any clip's playback.</li>
       </ul>
     </section>
