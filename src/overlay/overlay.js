@@ -1241,10 +1241,6 @@ function placeCharacter(snap) {
     // the whole body sky-high.
     const s = sampleRoot(rmS, sceneCurrentAction.time);
     modelRoot.position.y += s.dy * (sceneModel.height * scl) * ROOT_VFAC;
-    // Cancel the clip's HORIZONTAL displacement visually — otherwise the hips animation
-    // slides the model away from its root and snaps back on every loop ("drift"). Travel
-    // ("Move on") clips move for real via commitSceneTravel; in-place clips stay planted.
-    modelRoot.position.x -= (s.dx * Math.cos(snap.yaw) + s.dz * Math.sin(snap.yaw)) * (sceneModel.height * scl) * ROOT_VFAC;
     if (groundBones.length) {
       modelRoot.updateMatrixWorld(true);
       const lo = lowestFootY();
@@ -1268,11 +1264,34 @@ function placeCharacter(snap) {
 }
 
 const SCENE_FADE = 0.55;   // blend window (s) — long enough that every limb eases
+// "In Place" done the way Mixamo does it: strip the HORIZONTAL hip translation from the
+// track itself (keep the vertical), so the animation is cleanly centred on the body — no
+// slide-and-snap. Cached per clip; cache cleared on character load.
+const _pinnedCache = {};
+function pinnedClip(clip) {
+  const hit = _pinnedCache[clip.name]; if (hit) return hit;
+  const clone = clip.clone();
+  for (const tr of clone.tracks) {
+    if (/hips\.position$/i.test(tr.name)) {
+      const v = tr.values, x0 = v[0], z0 = v[2];
+      for (let i = 0; i < v.length; i += 3) { v[i] = x0; v[i + 2] = z0; }   // pin X/Z, keep Y (hops)
+    }
+  }
+  return (_pinnedCache[clip.name] = clone);
+}
+
 function playSceneClip(want) {
   let clip;
   if (want === 'walk') clip = clipForState('walk');
   else if (want)       clip = resolveClip(want) || clipForState(want);   // raw clip name OR a state id
   else                 clip = clipForState('idle');
+  // Root-motion handling in scenes:
+  //  · walk state → always pinned (the behavior brain drives the movement)
+  //  · "In place" clips → pinned (Mixamo-style, centred on the body)
+  //  · "Move on" clips → play as authored; commitSceneTravel advances the root at each loop
+  if (clip && rootMotionMap[clip.name] && (want === 'walk' || !clipMoveMap[clip.name])) {
+    clip = pinnedClip(clip);
+  }
   if (!clip || clip === sceneCurrentClip) return;
   // crossFadeTo blends BOTH clips at once: while the old action fades out, the new
   // one fades in, so the mixer interpolates every bone from the old pose to the new
@@ -1299,6 +1318,8 @@ let idleBreaking = false, idleBreakElapsed = 0, idleBreakUntil = 0, nextBreakDel
 function randBreakDelay() { return 8 + Math.random() * 14; }   // 8–22s between breaks
 
 function playBreakClip(clip) {
+  // In-place breaks get the pinned (hips-centred) variant, same as playSceneClip.
+  if (rootMotionMap[clip.name] && !clipMoveMap[clip.name]) clip = pinnedClip(clip);
   const next = mixer.clipAction(clip);
   next.enabled = true;
   next.setLoop(THREE.LoopOnce, 1); next.clampWhenFinished = true;
@@ -1351,21 +1372,21 @@ function floorStepWorldLen(f, u, v, dirU, dirV) {
   return Math.hypot(b.x - a.x, b.y - a.y) / eps;
 }
 
-let _lastRoot = null, _lastRootTime = -1;
-// Commit a Move-on root-motion clip's HORIZONTAL travel to the behavior position (while
-// idle) so the character moves for real and the NEXT walk starts where it ended. The
-// distance is the animation's ACTUAL displacement: the normalized hips delta × the hips'
-// world height (which scales with character size and floor depth), converted to floor-uv
-// through the floor's local scale — so it matches the real movement at any size, no fudge
-// factor. Vertical (the hop) is applied visually in placeCharacter.
+let _lastRootTime = -1;
+// TRAVEL ("Move on") clips play their root motion EXACTLY as authored — hips move through
+// space, the planted foot stays nailed to the floor, just like the Mixamo preview. The
+// character's LOGICAL position only advances when the clip LOOPS: at the wrap, the model's
+// hips visually snap back to the clip's start offset, and we advance the root by the clip's
+// net travel at the same instant — the two cancel exactly, so the next loop plays seamlessly
+// from where the animation ended. No per-frame compensation, no drift, no foot wobble.
 function commitSceneTravel(snap) {
   const name = sceneCurrentClip?.name;
   const rm = name && rootMotionMap[name];
-  if (!rm || !sceneCurrentAction || snap.moving || !clipMoveMap[name]) { _lastRoot = null; _lastRootTime = -1; return; }
+  if (!rm || !sceneCurrentAction || snap.moving || !clipMoveMap[name]) { _lastRootTime = -1; return; }
   const t = sceneCurrentAction.time;
-  const s = sampleRoot(rm, t);
-  if (_lastRoot && t >= _lastRootTime) {   // skip the frame where the loop wraps
-    const ddz = s.dz - _lastRoot.dz, ddx = s.dx - _lastRoot.dx;   // normalized local delta (fwd, right)
+  if (_lastRootTime >= 0 && t < _lastRootTime) {   // the action just wrapped
+    const n = rm.times.length;
+    const ddx = rm.dx[n - 1] - rm.dx[0], ddz = rm.dz[n - 1] - rm.dz[0];   // net loop travel (fwd, right)
     const f = activeScene.floor, u = snap.u, v = snap.v, yaw = snap.yaw;
     // Hips world height at this depth = ROOT_VFAC of the character's world height (which
     // already includes the size/userScale and the perspective depth scale).
@@ -1379,7 +1400,7 @@ function commitSceneTravel(snap) {
     const dRight = rightLen > 1e-6 ? realRight / rightLen : 0;
     behavior.translate(fwdU * dFwd + rightU * dRight, fwdV * dFwd + rightV * dRight);
   }
-  _lastRoot = s; _lastRootTime = t;
+  _lastRootTime = t;
 }
 
 function renderScene(dt) {
@@ -1503,6 +1524,7 @@ async function loadCharacter(filePath) {
   if (modelRoot) { scene.remove(modelRoot); try { VRMUtils.deepDispose(vrm?.scene ?? modelRoot); } catch {} modelRoot = null; vrm = null; }
   if (mixer) { mixer.stopAllAction(); mixer = null; }
   clips = []; groundBones = []; groundLineY = null;
+  for (const k in _pinnedCache) delete _pinnedCache[k];   // pinned variants belong to the old rig
 
   try {
     const buf = await window.deskbuddy.readCharacterFile(filePath);
