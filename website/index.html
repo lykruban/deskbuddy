@@ -13,11 +13,12 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Serif:ital@1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <script src="config.js"></script>
 </head>
 <body>
+<div class="fx" aria-hidden="true"><i></i><i></i></div>
 
 <!-- ══════════════ NAV ══════════════ -->
 <header class="nav" id="top">
@@ -39,7 +40,7 @@
 <!-- ══════════════ HERO (fullscreen looping capture behind) ══════════════ -->
 <section class="hero has-video">
   <div class="hero-bg" aria-hidden="true">
-    <video src="media/gojo-hero.mp4" autoplay muted loop playsinline></video>
+    <video src="media/gojo-hero.mp4" autoplay muted loop playsinline preload="metadata"></video>
   </div>
   <span class="hero-credit">live capture · an actual DeskBuddy on an actual desktop</span>
   <div class="wrap">
@@ -55,6 +56,13 @@
     <p class="micro reveal d4">No account needed · No subscription · Windows 10/11</p>
   </div>
 </section>
+
+<!-- ══════════════ TICKER ══════════════ -->
+<div class="ticker" aria-hidden="true">
+  <div class="ticker-track">
+    <span>wanders<b>◆</b></span><span>reacts<b>◇</b></span><span>lives in worlds you build<b>◆</b></span><span>commutes through portals<b>◇</b></span><span>bring your own characters<b>◆</b></span><span>every monitor is a room<b>◇</b></span><span>free forever<b>◆</b></span><span>wanders<b>◇</b></span><span>reacts<b>◆</b></span><span>lives in worlds you build<b>◇</b></span><span>commutes through portals<b>◆</b></span><span>bring your own characters<b>◇</b></span><span>every monitor is a room<b>◆</b></span><span>free forever<b>◇</b></span>
+  </div>
+</div>
 
 <!-- ══════════════ SHOWCASE / GALLERY ══════════════ -->
 <section class="section" id="showcase">

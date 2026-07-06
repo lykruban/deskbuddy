@@ -13,6 +13,44 @@
   }), { threshold: 0.12 });
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 
+  // ── nav state + scroll progress (rAF-throttled, transform-only) ────────────
+  const nav = document.querySelector('.nav');
+  const prog = document.createElement('div');
+  prog.className = 'progress'; prog.setAttribute('aria-hidden', 'true');
+  document.body.prepend(prog);
+  let raf = 0;
+  const onScroll = () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      const h = document.documentElement;
+      nav?.classList.toggle('scrolled', h.scrollTop > 8);
+      prog.style.transform = `scaleX(${h.scrollTop / Math.max(1, h.scrollHeight - h.clientHeight)})`;
+      raf = 0;
+    });
+  };
+  addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // ── videos only run while on screen (saves CPU/GPU + battery) ──────────────
+  const vio = new IntersectionObserver((es) => es.forEach(e => {
+    const v = e.target;
+    if (e.isIntersecting) v.play().catch(() => {});
+    else v.pause();
+  }), { threshold: 0.2 });
+  const watchVideos = (root) =>
+    (root || document).querySelectorAll('video').forEach(v => vio.observe(v));
+
+  // ── mouse-tracked card glow (pointer devices only) ─────────────────────────
+  if (matchMedia('(pointer:fine)').matches) {
+    document.addEventListener('pointermove', (e) => {
+      const el = e.target.closest?.('.card, .tier');
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+      el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+    }, { passive: true });
+  }
+
   // ── gallery (home) ─────────────────────────────────────────────────────────
   const gal = $('gallery');
   if (gal && Array.isArray(CFG.MEDIA)) {
@@ -21,13 +59,14 @@
       const pad = (() => { const [w, h] = (m.ratio || '16/10').split('/').map(Number); return (h / w * 100).toFixed(2); })();
       const media = m.src
         ? (m.kind === 'video'
-            ? `<video class="g-media" src="${m.src}" autoplay muted loop playsinline preload="metadata"></video>`
+            ? `<video class="g-media" src="${m.src}" muted loop playsinline preload="none"></video>`
             : `<img class="g-media" src="${m.src}" alt="${m.label}" loading="lazy">`)
         : `<div class="g-ph"><b>${m.label}</b><span>${m.hint || 'capture coming soon'}</span></div>`;
       const cap = m.src ? `<figcaption class="g-cap">${m.label}</figcaption>` : '';
       return `<figure class="g-item${wide}"><div class="g-frame" style="padding-top:${pad}%">${media}</div>${cap}</figure>`;
     }).join('');
   }
+  watchVideos();
 
   // ── download buttons (home + download page) ────────────────────────────────
   const vEl = $('dl-version'), sEl = $('dl-size');
