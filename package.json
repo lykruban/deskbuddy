@@ -7,6 +7,7 @@
     "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
+    "build:appx": "electron-builder --win appx",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux"
   },
@@ -33,6 +34,18 @@
     },
     "portable": {
       "artifactName": "DeskBuddy-Portable-${version}.exe"
+    },
+    "appx": {
+      "applicationId": "DeskBuddy",
+      "identityName": "REPLACE_WITH_PARTNER_CENTER_IDENTITY_NAME",
+      "publisher": "CN=REPLACE_WITH_PARTNER_CENTER_PUBLISHER_ID",
+      "publisherDisplayName": "Yuvexel",
+      "backgroundColor": "#05060a",
+      "showNameOnTiles": true,
+      "languages": [
+        "en-US"
+      ],
+      "artifactName": "DeskBuddy-${version}.appx"
     },
     "mac": {
       "target": "dmg",
