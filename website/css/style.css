@@ -104,6 +104,26 @@ h1 em{padding-right:.06em;background-size:200% 100%;animation:shimmer 7s var(--e
   background:#ff5d5d;margin-right:7px;vertical-align:1px;animation:blink 1.6s ease infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 
+/* ── hero stat bar ─────────────────────────────────────────────────────────── */
+.stat-bar{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap}
+.stat{display:flex;align-items:center;gap:9px;padding:11px 17px;border-radius:14px;
+  border:1px solid var(--line2);background:#ffffff08;backdrop-filter:blur(6px);
+  font-family:inherit;color:var(--text);cursor:default;transition:transform .3s var(--ease),border-color .3s,background .3s}
+a.stat{cursor:pointer}
+.stat-ico{font-size:15px;line-height:1;color:var(--vio)}
+.stat-n{font-family:var(--font-d);font-weight:800;font-size:17px;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+.stat-l{font-family:var(--font-m);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .stars{color:var(--amb);font-size:13px;letter-spacing:1px}
+a.stat:hover{transform:translateY(-2px);border-color:var(--line2);background:#ffffff10}
+.like-btn{cursor:pointer;border:1px solid var(--line2)}
+.like-btn .stat-ico{transition:transform .3s var(--ease)}
+.like-btn:hover{transform:translateY(-2px);border-color:#ff6b9d55}
+.like-btn.on{border-color:#ff6b9d66;background:#ff6b9d12}
+.like-btn.on .stat-ico{color:#ff6b9d}
+.like-btn.pop .stat-ico{animation:heart-pop .45s var(--ease)}
+@keyframes heart-pop{0%{transform:scale(1)}35%{transform:scale(1.45)}100%{transform:scale(1)}}
+
 /* ── marquee ticker ────────────────────────────────────────────────────────── */
 .ticker{border-block:1px solid var(--line);overflow:hidden;background:var(--bg2);position:relative;z-index:1}
 .ticker-track{display:flex;width:max-content;animation:marquee 30s linear infinite;padding:13px 0}
@@ -211,6 +231,49 @@ h2{font-family:var(--font-d);font-size:clamp(30px,4.4vw,46px);letter-spacing:-.0
 .tier li::before{content:"◇";position:absolute;left:0;color:var(--vio);font-size:11px;top:2px}
 .tier.hl li::before{content:"◆";color:var(--cyn)}
 .tier .btn{width:100%}
+
+/* ── reviews ───────────────────────────────────────────────────────────────── */
+.stars{font-family:var(--font-b);letter-spacing:1px}
+.rev-rating{display:flex;align-items:center;gap:22px;margin-bottom:36px;
+  border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:24px 28px;
+  max-width:440px;position:relative;overflow:hidden}
+.rev-rating::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(70% 120% at 0% 0%,#ffb26b14,transparent 60%)}
+.rev-big{font-family:var(--font-d);font-weight:800;font-size:56px;line-height:.9;letter-spacing:-.03em;
+  display:flex;align-items:baseline;position:relative}
+.rev-big #rev-avg{color:var(--faint)}
+.rev-big.has-rating #rev-avg{background:var(--grad-warm);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.rev-outof{font-size:18px;color:var(--faint);font-weight:500}
+.rev-stars{color:var(--amb);font-size:19px;letter-spacing:2px}
+.rev-count{font-family:var(--font-m);font-size:11.5px;letter-spacing:.04em;color:var(--muted);margin-top:6px}
+
+.rev-grid{columns:3;column-gap:16px;margin-bottom:52px}
+@media(max-width:880px){.rev-grid{columns:2}}
+@media(max-width:600px){.rev-grid{columns:1}}
+.rev-card{break-inside:avoid;margin:0 0 16px;border:1px solid var(--line);border-radius:16px;
+  background:var(--surface);padding:22px;transition:border-color .25s,transform .4s var(--ease)}
+.rev-card:hover{border-color:var(--line2);transform:translateY(-3px)}
+.rev-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}
+.rev-name{font-family:var(--font-d);font-weight:700;font-size:14px}
+.rev-stars-sm{color:var(--amb);font-size:12px;letter-spacing:1px;flex-shrink:0}
+.rev-card blockquote{color:var(--muted);font-size:14px;line-height:1.6}
+.rev-card .rev-when{font-family:var(--font-m);font-size:10.5px;letter-spacing:.06em;color:var(--faint);margin-top:12px}
+.rev-empty{color:var(--muted);font-size:14.5px}
+
+.rev-write{border:1px solid var(--line);border-radius:18px;background:var(--surface);
+  padding:30px;max-width:620px;scroll-margin-top:90px}
+.rev-write h3{font-family:var(--font-d);font-size:18px;font-weight:700;margin-bottom:14px}
+.star-pick{display:flex;gap:6px;margin-bottom:16px}
+.star-pick button{background:none;border:none;cursor:pointer;font-size:34px;line-height:1;padding:0;
+  color:#ffffff1f;transition:transform .15s var(--ease),color .15s}
+.star-pick button:hover{transform:scale(1.18)}
+.star-pick button.lit{color:var(--amb)}
+.rev-form{display:grid;gap:12px}
+.rev-form input,.rev-form textarea{width:100%;padding:12px 15px;border-radius:11px;border:1px solid var(--line2);
+  background:var(--bg);color:var(--text);font-size:14.5px;font-family:var(--font-b);transition:border-color .2s,box-shadow .2s}
+.rev-form textarea{min-height:96px;resize:vertical}
+.rev-form input:focus,.rev-form textarea:focus{outline:none;border-color:var(--vio);box-shadow:0 0 0 3px #a08bfa26}
+.rev-form .btn{justify-self:start}
 
 /* ── waitlist ──────────────────────────────────────────────────────────────── */
 .capture{max-width:600px;position:relative}

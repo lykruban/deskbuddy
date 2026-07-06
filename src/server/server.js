@@ -186,6 +186,9 @@ function startServer(dataDir) {
     } catch { res.status(500).json({ error: 'Could not save' }); }
   });
 
+  // Website stats + likes + guestbook reviews (public, see src/server/site.js).
+  require('./site').mount(app, dataDir, clientIp);
+
   app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
   app.get('/api/me/library', requireAuth, (req, res) => res.json(req.user.owned || []));
 

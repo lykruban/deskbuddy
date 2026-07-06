@@ -4,6 +4,10 @@
 window.DB_CONFIG = {
   API_BASE: 'https://api.yuvexel.com',
 
+  // Shown before the live count loads (and if the API is unreachable), so the
+  // page never displays a bare "0". The real numbers come from /api/app/stats.
+  STATS_FALLBACK: { downloads: 0, likes: 0, reviews: 0, rating: 0 },
+
   DOWNLOAD_URL: 'https://github.com/lykruban/deskbuddy/releases/download/v1.0.0/DeskBuddy-Setup-1.0.0.exe',
   PORTABLE_URL: 'https://github.com/lykruban/deskbuddy/releases/download/v1.0.0/DeskBuddy-Portable-1.0.0.exe',
   VERSION: 'v1.0.0',

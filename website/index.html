@@ -54,6 +54,23 @@
       <a class="btn btn-ghost btn-lg" href="#showcase">See it in action</a>
     </div>
     <p class="micro reveal d4">No account needed · No subscription · Windows 10/11</p>
+    <div class="stat-bar reveal d4" id="stat-bar" aria-live="polite">
+      <button class="stat like-btn" id="like-btn" type="button" aria-pressed="false" title="Show some love">
+        <span class="stat-ico" aria-hidden="true">♥</span>
+        <span class="stat-n" id="stat-likes">—</span>
+        <span class="stat-l">likes</span>
+      </button>
+      <div class="stat">
+        <span class="stat-ico" aria-hidden="true">↓</span>
+        <span class="stat-n" id="stat-downloads">—</span>
+        <span class="stat-l">downloads</span>
+      </div>
+      <a class="stat" href="#reviews">
+        <span class="stat-ico stars" id="stat-stars" aria-hidden="true">★★★★★</span>
+        <span class="stat-n" id="stat-rating">—</span>
+        <span class="stat-l"><span id="stat-reviews">0</span> reviews</span>
+      </a>
+    </div>
   </div>
 </section>
 
@@ -160,11 +177,45 @@
   </div>
 </section>
 
+<!-- ══════════════ REVIEWS ══════════════ -->
+<section class="section" id="reviews">
+  <div class="wrap">
+    <header class="sec-head">
+      <span class="sec-num">06</span>
+      <h2 class="reveal">What buddies are saying</h2>
+      <p class="lead reveal d1">Real words from real desktops. Adopted one? <a href="#write-review" id="jump-write" style="color:var(--cyn)">Leave a review</a> — it takes ten seconds.</p>
+    </header>
+
+    <div class="rev-rating reveal" id="rev-rating">
+      <div class="rev-big"><span id="rev-avg">—</span><span class="rev-outof">/5</span></div>
+      <div>
+        <div class="rev-stars stars" id="rev-stars">★★★★★</div>
+        <div class="rev-count"><span id="rev-count">0</span> reviews · <span id="rev-dl">—</span> downloads</div>
+      </div>
+    </div>
+
+    <div class="rev-grid" id="reviews-list"><!-- built from /api/app/reviews --></div>
+
+    <div class="rev-write reveal" id="write-review">
+      <h3>Write a review</h3>
+      <div class="star-pick" id="star-pick" role="radiogroup" aria-label="Your rating">
+        <button type="button" data-v="1" aria-label="1 star">★</button><button type="button" data-v="2" aria-label="2 stars">★</button><button type="button" data-v="3" aria-label="3 stars">★</button><button type="button" data-v="4" aria-label="4 stars">★</button><button type="button" data-v="5" aria-label="5 stars">★</button>
+      </div>
+      <form class="rev-form" id="review-form" novalidate>
+        <input type="text" id="rev-name" maxlength="40" placeholder="Your name (optional)" autocomplete="name" aria-label="Your name">
+        <textarea id="rev-text" maxlength="800" placeholder="How's your buddy treating you?" required aria-label="Your review"></textarea>
+        <button class="btn btn-primary" type="submit" id="rev-btn">Post review</button>
+        <p class="form-msg" id="rev-msg"></p>
+      </form>
+    </div>
+  </div>
+</section>
+
 <!-- ══════════════ DOWNLOAD ══════════════ -->
 <section class="section" id="download">
   <div class="wrap">
     <header class="sec-head">
-      <span class="sec-num">06</span>
+      <span class="sec-num">07</span>
       <h2 class="reveal">Adopt a buddy</h2>
       <p class="lead reveal d1">Free for Windows. Sixty seconds from download to someone living on your screen.</p>
     </header>

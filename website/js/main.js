@@ -135,6 +135,132 @@
       : '<p style="color:var(--muted)">Nothing here yet — first post soon.</p>';
   }
 
+  // ── app stats + likes + reviews (home) ─────────────────────────────────────
+  const API = CFG.API_BASE || '';
+  const nf = new Intl.NumberFormat('en-US');
+  const starStr = (r) => { const n = Math.round(r); return '★★★★★☆☆☆☆☆'.slice(5 - n, 10 - n); };
+  const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+
+  // animate a number from 0 → target once (cheap, one rAF loop, respects RM)
+  function countUp(el, target) {
+    if (!el) return;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || target < 1) { el.textContent = nf.format(target); return; }
+    const dur = 900, t0 = performance.now();
+    const tick = (t) => {
+      const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      el.textContent = nf.format(Math.round(target * e));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  const statBar = $('stat-bar');
+  const revList = $('reviews-list');
+  if (statBar || revList) {
+    const LS_LIKED = 'db_liked', LS_REVIEWED = 'db_reviewed';
+    const fb = CFG.STATS_FALLBACK || { downloads: 0, likes: 0, reviews: 0, rating: 0 };
+
+    const paintStats = (s) => {
+      countUp($('stat-downloads'), s.downloads || 0);
+      countUp($('stat-likes'), s.likes || 0);
+      setText('stat-reviews', nf.format(s.reviews || 0));
+      setText('stat-rating', (s.rating || 0).toFixed(1));
+      const st = $('stat-stars'); if (st) st.textContent = starStr(s.rating || 0);
+      setText('rev-avg', (s.rating || 0) ? (s.rating).toFixed(1) : '—');
+      $('rev-rating')?.querySelector('.rev-big')?.classList.toggle('has-rating', (s.rating || 0) > 0);
+      setText('rev-count', nf.format(s.reviews || 0));
+      setText('rev-dl', nf.format(s.downloads || 0));
+      const rs = $('rev-stars'); if (rs) rs.textContent = starStr(s.rating || 0);
+    };
+    paintStats(fb);
+    fetch(API + '/api/app/stats').then(r => r.json()).then(paintStats).catch(() => {});
+
+    // like (once per browser, toggleable) ───────────────────────────────────────
+    const likeBtn = $('like-btn');
+    if (likeBtn) {
+      let liked = localStorage.getItem(LS_LIKED) === '1';
+      const paintLike = () => { likeBtn.classList.toggle('on', liked); likeBtn.setAttribute('aria-pressed', liked); };
+      paintLike();
+      likeBtn.addEventListener('click', async () => {
+        liked = !liked;
+        localStorage.setItem(LS_LIKED, liked ? '1' : '0');
+        paintLike();
+        likeBtn.classList.remove('pop'); void likeBtn.offsetWidth; likeBtn.classList.add('pop');
+        try {
+          const r = await fetch(API + '/api/app/like', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ undo: !liked }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (typeof d.likes === 'number') setText('stat-likes', nf.format(d.likes));
+        } catch {}
+      });
+    }
+
+    // reviews list ────────────────────────────────────────────────────────────
+    const timeAgo = (ts) => {
+      const s = (Date.now() - ts) / 1000;
+      if (s < 3600) return Math.max(1, Math.floor(s / 60)) + 'm ago';
+      if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+      if (s < 2592000) return Math.floor(s / 86400) + 'd ago';
+      return new Date(ts).toLocaleDateString();
+    };
+    const esc = (s) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const revCard = (r) => `<figure class="rev-card"><div class="rev-head">
+        <span class="rev-name">${esc(r.name || 'Anonymous buddy')}</span>
+        <span class="rev-stars-sm stars">${starStr(r.rating)}</span></div>
+      <blockquote>${esc(r.text || '')}</blockquote>
+      <figcaption class="rev-when">${r.at ? timeAgo(r.at) : ''}</figcaption></figure>`;
+    const renderReviews = (list) => {
+      if (!revList) return;
+      revList.innerHTML = list && list.length
+        ? list.map(revCard).join('')
+        : `<p class="rev-empty">No reviews yet — be the first to say hi 🐾</p>`;
+    };
+    if (revList) fetch(API + '/api/app/reviews').then(r => r.json()).then(renderReviews).catch(() => renderReviews([]));
+
+    // star picker + submit ────────────────────────────────────────────────────
+    const pick = $('star-pick'), form = $('review-form'), rBtn = $('rev-btn'), rMsg = $('rev-msg');
+    let rating = 0;
+    if (pick) {
+      const stars = [...pick.querySelectorAll('button')];
+      const paint = (n) => stars.forEach((b, i) => b.classList.toggle('lit', i < n));
+      stars.forEach(b => {
+        b.addEventListener('mouseenter', () => paint(+b.dataset.v));
+        b.addEventListener('click', () => { rating = +b.dataset.v; paint(rating); });
+      });
+      pick.addEventListener('mouseleave', () => paint(rating));
+    }
+    const revFlash = (t, ok) => { if (rMsg) { rMsg.textContent = t; rMsg.className = 'form-msg ' + (ok ? 'ok' : 'err'); } };
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (localStorage.getItem(LS_REVIEWED) === '1') { revFlash('You already left a review — thank you! 🐾', true); return; }
+      const text = ($('rev-text').value || '').trim();
+      const name = ($('rev-name').value || '').trim();
+      if (!rating) { revFlash('Pick a star rating first ⭐', false); return; }
+      if (text.length < 5) { revFlash('Tell us a little more than that 🙂', false); return; }
+      rBtn.disabled = true; rBtn.textContent = 'Posting…';
+      try {
+        const r = await fetch(API + '/api/app/review', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rating, text, name }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && d.review) {
+          localStorage.setItem(LS_REVIEWED, '1');
+          revFlash('Posted — thank you! 🐾', true);
+          form.reset(); rating = 0; pick?.querySelectorAll('button').forEach(b => b.classList.remove('lit'));
+          if (revList) {
+            const empty = revList.querySelector('.rev-empty'); if (empty) revList.innerHTML = '';
+            revList.insertAdjacentHTML('afterbegin', revCard(d.review));
+          }
+        } else revFlash(d.error || 'That didn\'t post — try again?', false);
+      } catch { revFlash('Couldn\'t reach the server — try again in a moment.', false); }
+      rBtn.disabled = false; rBtn.textContent = 'Post review';
+    });
+  }
+
   // ── docs directory scroll-spy ──────────────────────────────────────────────
   const side = $('docs-side');
   if (side) {
