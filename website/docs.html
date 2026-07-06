@@ -42,6 +42,7 @@
     <a href="#buddy">Buddy mode</a>
     <h4>Character Studio</h4>
     <a href="#studio">Overview &amp; sign-in</a>
+    <a href="#rigging">Rig a character (Mixamo)</a>
     <a href="#tab-character">Character tab</a>
     <a href="#tab-animations">Animations tab</a>
     <a href="#tab-states">States tab</a>
@@ -110,6 +111,36 @@
       <p>The right panel has four tabs: <b>Character · Animations · States · Scene</b>.</p>
     </section>
 
+    <section id="rigging">
+      <h2>Rig a character on Mixamo (free)</h2>
+      <p><b>VRM</b> avatars (VRoid, VTuber models) are already rigged — skip this and import them
+        straight in the <a href="#tab-character">Character tab</a>. <b>Any other humanoid model</b>
+        (an FBX, OBJ, or a Blender export) needs a skeleton before it can move, and the free,
+        five-minute way to add one is <a href="https://www.mixamo.com" rel="noopener" target="_blank">Mixamo</a>,
+        a free service from Adobe.</p>
+      <div class="note"><b>Is it really free?</b> Yes — Mixamo needs only a free Adobe account, and
+        the rigged characters and animations are royalty-free for personal <i>and</i> commercial use.
+        The one rule: don't re-upload Mixamo's raw files as standalone downloads — use them inside a
+        project, which is exactly what DeskBuddy does.</div>
+      <ol>
+        <li>Go to <a href="https://www.mixamo.com" rel="noopener" target="_blank">mixamo.com</a> and
+          sign in with a free Adobe account.</li>
+        <li>Click <b>Upload Character</b> and drop your model (<code>.fbx</code>, <code>.obj</code>,
+          or a <code>.zip</code> containing the model + its textures). A T-pose or A-pose works best.</li>
+        <li>Place the coloured markers on the chin, wrists, elbows, knees and groin, then <b>Next</b>.
+          Mixamo auto-rigs your model in under a minute.</li>
+        <li>Click <b>Download</b> → <b>FBX Binary</b>, <i>Pose: T-pose</i>, <b>With Skin</b>. That
+          file is your rigged character.</li>
+        <li>Back in DeskBuddy → Studio → <a href="#tab-character">Character tab</a> →
+          <b>Import Model</b>, and choose that FBX.</li>
+        <li>For motion, browse Mixamo's <b>Animations</b> library and download each clip as
+          <b>FBX, Without Skin</b> — then <a href="#tab-animations">import them in the Animations
+          tab</a>. DeskBuddy retargets them onto your character automatically.</li>
+      </ol>
+      <div class="note">Mixamo's auto-rigger handles <b>bipedal humanoid</b> characters. Four-legged
+        or non-humanoid models fall outside its (and our animation set's) scope for now.</div>
+    </section>
+
     <section id="tab-character">
       <h2>Character tab</h2>
       <p>Import and fit your model.</p>
@@ -120,7 +151,8 @@
         <li><b>Rotation</b> — turn/tilt/roll to face the camera; <b>⟲ Reset Rotation</b> resets.</li>
       </ul>
       <div class="note">VRM models (VRoid, VTuber avatars) come pre-rigged with hair/cloth spring
-        bones — they just work. Mixamo-rigged FBX models animate perfectly with Mixamo clips.</div>
+        bones — they just work. Mixamo-rigged FBX models animate perfectly with Mixamo clips.
+        Model not rigged yet? <a href="#rigging">Rig it free on Mixamo</a> first.</div>
     </section>
 
     <section id="tab-animations">

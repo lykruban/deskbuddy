@@ -761,7 +761,7 @@ function processImportedClips(clips, sourceRoot, filename, ext) {
     const boneNames = [];
     model.traverse(n => { if (n.isBone) boneNames.push(n.name); });
     if (!boneNames.length) {
-      setStatus('⚠ Model has no skeleton — rig it in the Rig tab first, then import animations.');
+      setStatus('⚠ Model has no skeleton — rig it free on mixamo.com first, then import animations.');
       return;
     }
     // Mixamo-named skeleton (our rig template, or an auto-mapped one) → retarget
