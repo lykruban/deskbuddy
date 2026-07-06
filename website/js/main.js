@@ -31,6 +31,24 @@
   addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 
+  // ── mobile nav menu (hamburger dropdown) ────────────────────────────────────
+  const burger = document.querySelector('.nav-burger');
+  const navLinks = document.querySelector('.nav-links');
+  if (burger && navLinks) {
+    const closeMenu = () => { navLinks.classList.remove('open'); burger.setAttribute('aria-expanded', 'false'); };
+    burger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = navLinks.classList.toggle('open');
+      burger.setAttribute('aria-expanded', String(open));
+    });
+    navLinks.querySelectorAll('a').forEach(a => a.addEventListener('click', closeMenu));
+    document.addEventListener('click', (e) => {
+      if (navLinks.classList.contains('open') && !navLinks.contains(e.target) && e.target !== burger) closeMenu();
+    });
+    addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+    addEventListener('resize', () => { if (innerWidth > 820) closeMenu(); });
+  }
+
   // ── videos only run while on screen (saves CPU/GPU + battery) ──────────────
   const vio = new IntersectionObserver((es) => es.forEach(e => {
     const v = e.target;
