@@ -28,6 +28,7 @@ body::after{content:"";position:fixed;inset:-50%;z-index:2000;pointer-events:non
 a{color:inherit;text-decoration:none}
 img,video{max-width:100%;display:block}
 .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+@media(max-width:480px){.wrap{padding:0 18px}}
 em{font-style:italic;font-family:var(--font-s);font-weight:400;letter-spacing:0;
   background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 
@@ -363,11 +364,13 @@ h2{font-family:var(--font-d);font-size:clamp(30px,4.4vw,46px);letter-spacing:-.0
 
 /* ── sub-page header ───────────────────────────────────────────────────────── */
 .page-hero{padding:96px 0 60px;border-bottom:1px solid var(--line);position:relative;overflow:hidden}
+@media(max-width:700px){.page-hero{padding:56px 0 40px}}
 .page-hero::before{content:"";position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(640px 300px at 18% -20%,#a08bfa17,transparent 70%),
              radial-gradient(520px 260px at 88% 0%,#53e6cf10,transparent 70%)}
 .page-hero .wrap{position:relative}
 .page-hero h1{font-size:clamp(36px,5vw,60px);margin-top:12px}
+@media(max-width:480px){.page-hero h1{font-size:clamp(30px,9vw,60px)}}
 .page-hero .lead{margin-top:14px}
 
 /* ── docs (directory sidebar + content) ────────────────────────────────────── */
@@ -375,24 +378,44 @@ h2{font-family:var(--font-d);font-size:clamp(30px,4.4vw,46px);letter-spacing:-.0
 @media(max-width:860px){.docs{grid-template-columns:1fr;gap:24px}}
 .docs-side{position:sticky;top:88px;align-self:start;max-height:calc(100vh - 110px);overflow-y:auto;
   border-right:1px solid var(--line);padding-right:20px}
-@media(max-width:860px){.docs-side{position:static;border-right:none;border-bottom:1px solid var(--line);padding:0 0 16px;max-height:none}}
+@media(max-width:860px){.docs-side{position:static;border-right:none;border-bottom:1px solid var(--line);padding:0 0 20px;max-height:none}}
 .docs-side h4{font-family:var(--font-m);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
   color:var(--faint);margin:18px 0 8px}
 .docs-side a{display:block;padding:5px 0 5px 12px;font-size:13.5px;color:var(--muted);
   border-left:2px solid transparent;transition:color .15s,border-color .15s}
 .docs-side a:hover{color:var(--text)}
 .docs-side a.on{color:var(--text);border-left-color:var(--vio)}
+
+/* directory toggle — mobile/tablet only, collapsed by default; desktop sidebar is untouched */
+.docs-toggle{display:none}
+@media(max-width:860px){
+  .docs-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:13px 16px;font-family:var(--font-d);font-weight:700;font-size:14.5px;color:var(--text);
+    cursor:pointer;min-height:44px;-webkit-tap-highlight-color:transparent}
+  .docs-toggle-ico{color:var(--vio);transition:transform .3s var(--ease)}
+  .docs-toggle[aria-expanded="true"] .docs-toggle-ico{transform:rotate(180deg)}
+  .docs-side-list{max-height:0;overflow:hidden;opacity:0;
+    transition:max-height .35s var(--ease),opacity .25s var(--ease)}
+  .docs-side-list.open{max-height:60vh;opacity:1;overflow-y:auto;margin-top:10px}
+  .docs-side-list h4:first-child{margin-top:4px}
+  .docs-side a{padding:12px 0 12px 12px;font-size:14.5px;min-height:44px;display:flex;align-items:center}
+}
+
 .docs-body{min-width:0;max-width:720px}
 .docs-body section{padding:8px 0 44px;border-bottom:1px solid var(--line);margin-bottom:36px}
+@media(max-width:700px){.docs-body section{padding:6px 0 32px;margin-bottom:24px}}
 .docs-body h2{font-size:26px;scroll-margin-top:90px}
 .docs-body h3{font-family:var(--font-d);font-size:17px;font-weight:700;margin:26px 0 8px;scroll-margin-top:90px}
 .docs-body p,.docs-body li{color:var(--muted);font-size:14.5px}
+@media(max-width:700px){.docs-body p,.docs-body li{font-size:15.5px;line-height:1.75}}
 .docs-body ul,.docs-body ol{padding-left:22px;margin:10px 0}
 .docs-body li{margin:6px 0}
 .docs-body b,.docs-body strong{color:var(--text)}
 .docs-body img{border:1px solid var(--line);border-radius:12px;margin:14px 0;max-width:100%}
 .docs-body code,kbd{background:var(--surface);border:1px solid var(--line);border-radius:6px;
-  padding:1px 7px;font-family:var(--font-m);font-size:12px;color:var(--cyn)}
+  padding:1px 7px;font-family:var(--font-m);font-size:12px;color:var(--cyn);
+  overflow-wrap:anywhere;word-break:break-word}
 .note{border:1px solid var(--line);border-left:3px solid var(--cyn);border-radius:12px;
   background:var(--surface);padding:14px 18px;font-size:13.5px;color:var(--muted);margin:14px 0}
 

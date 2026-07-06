@@ -279,6 +279,17 @@
     });
   }
 
+  // ── docs directory toggle (mobile/tablet dropdown) ──────────────────────────
+  const docsToggle = $('docs-toggle'), docsList = $('docs-side-list');
+  if (docsToggle && docsList) {
+    const closeDocsMenu = () => { docsList.classList.remove('open'); docsToggle.setAttribute('aria-expanded', 'false'); };
+    docsToggle.addEventListener('click', () => {
+      const open = docsList.classList.toggle('open');
+      docsToggle.setAttribute('aria-expanded', String(open));
+    });
+    docsList.querySelectorAll('a').forEach(a => a.addEventListener('click', closeDocsMenu));
+  }
+
   // ── docs directory scroll-spy ──────────────────────────────────────────────
   const side = $('docs-side');
   if (side) {
