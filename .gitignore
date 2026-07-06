@@ -5,6 +5,10 @@ node_modules/
 dist/
 out/
 build/
+# …but keep Store/appx source tile assets (not build output)
+!build/
+!build/appx/
+!build/appx/**
 
 # Logs
 *.log
