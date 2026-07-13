@@ -10,6 +10,7 @@ window.DB_CONFIG = {
 
   DOWNLOAD_URL: 'https://github.com/lykruban/deskbuddy/releases/download/v1.0.0/DeskBuddy-Setup-1.0.0.exe',
   PORTABLE_URL: 'https://github.com/lykruban/deskbuddy/releases/download/v1.0.0/DeskBuddy-Portable-1.0.0.exe',
+  ITCH_URL: 'https://lykruban.itch.io/deskbuddy',
   VERSION: 'v1.0.0',
   SIZE: '≈100 MB',
 

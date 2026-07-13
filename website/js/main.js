@@ -97,6 +97,7 @@
   };
   wire($('dl-btn'), CFG.DOWNLOAD_URL, 'installer');
   wire($('dl-portable'), CFG.PORTABLE_URL, 'portable');
+  wire($('dl-itch'), CFG.ITCH_URL, 'itch.io');
 
   // ── waitlist (home) ────────────────────────────────────────────────────────
   const wlForm = $('waitlist-form'), wlMsg = $('wl-msg'), wlBtn = $('wl-btn'), wlEmail = $('wl-email');
